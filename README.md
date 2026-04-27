@@ -118,7 +118,7 @@ Set things like:
 
 Open:
 
-http://<raspberry-pi-ip>:8080
+`http://<raspberry-pi-ip>:8080`
 
 ---
 
@@ -152,7 +152,7 @@ Blackcap-Pi-Extension/
 
 Click the extension and set:
 
-http://<raspberry-pi-ip>:8080
+`http://<raspberry-pi-ip>:8080`
 
 ---
 
@@ -231,7 +231,7 @@ In Admin UI:
 
 ## 🛠 Admin UI
 
-http://<raspberry-pi-ip>:8080
+`http://<raspberry-pi-ip>:8080`
 
 From here you can:
 
@@ -249,7 +249,7 @@ Blackcap Pi includes a lightweight, mobile-friendly control interface — no app
 
 Access it at:
 
-http://<raspberry-pi-ip>:8080/mobile
+`http://<raspberry-pi-ip>:8080/mobile`
 
 ---
 
