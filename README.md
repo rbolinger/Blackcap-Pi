@@ -32,15 +32,22 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 
 ## 📦 Project Structure
 
+<details>
+<summary>Click to expand</summary>
+
+```bash
 Blackcap-Pi/
-├── Blackcap-Pi-Extension/      # Chrome extension
-├── inky_admin/
-│   └── inky_admin_app.py       # Admin UI server
-├── inky_menu.py                # Menu rendering logic
-├── render_recipe_mode.py       # Recipe display renderer
-├── config.ini                  # Configuration
-├── inky_env/                   # Python virtual environment (local)
-└── README.md
+├── Blackcap-Pi-Extension/      # 🌐 Chrome extension
+├── inky_admin/                 # 🛠 Admin UI
+│   └── inky_admin_app.py       #   └── Flask server
+├── inky_menu.py                # 📅 Menu rendering logic
+├── render_recipe_mode.py       # 🍽️ Recipe display renderer
+├── config.ini                  # ⚙️ Configuration
+├── inky_env/                   # 🐍 Python virtual environment (local)
+└── README.md                   # 📖 Project documentation
+```
+
+</details>
 
 ---
 
