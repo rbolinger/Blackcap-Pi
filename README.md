@@ -32,9 +32,6 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 
 ## 📦 Project Structure
 
-<details>
-<summary>Click to expand</summary>
-
 ```bash
 Blackcap-Pi/
 ├── Blackcap-Pi-Extension/      # 🌐 Chrome extension
@@ -46,8 +43,6 @@ Blackcap-Pi/
 ├── inky_env/                   # 🐍 Python virtual environment (local)
 └── README.md                   # 📖 Project documentation
 ```
-
-</details>
 
 ---
 
