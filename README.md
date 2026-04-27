@@ -1,264 +1,279 @@
-# Blackcap Pi Display
+# 🫐 Blackcap Pi
 
-A Raspberry Pi project for rendering menus and recipes to a Waveshare e-ink display, powered by a smart rendering pipeline and a web-based admin UI.
+A purpose-built Raspberry Pi + e-ink display system for beautifully simple, distraction-free content.
 
----
-
-## 📸 Overview
-
-Blackcap Pi turns a Raspberry Pi + e-ink display into a dynamic information panel for:
-
-* 📅 School or weekly menus
-* 🍽 Recipes from the web, Dropbox, or Google Drive
-* 🧠 Smart visual enhancements (icons, formatting, layout)
-
-All managed through a clean browser-based admin interface.
+Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, readable format—perfect for kitchens, family hubs, or anywhere you want useful information without screens screaming for attention.
 
 ---
 
-## 🚀 Features
+## ✨ Features
 
-### 📅 Smart Menu Mode
-
-* Pulls menu data from a web source
-* Uses OCR + image diff detection to avoid unnecessary updates
-* Adds contextual icons via Noun Project
-* Automatically formats for e-ink readability
-
----
-
-### 🍽 Recipe Mode
-
-* Switch display to show a selected recipe
-* Supports:
-
-  * Web pages
-  * Dropbox shared links
-  * Google Drive links
-* Automatically extracts:
-
-  * Recipe text
-  * Recipe image
-* Generates and caches:
-
-  * PDF render
-  * Preview image
-* Smart auto-fit text layout
+* 🖥️ Optimized for Waveshare e-ink displays
+* 🍽️ Dedicated **Recipe Mode** (clean, readable layouts)
+* 📅 Automated **Menu Mode** (set it and forget it)
+* 🌐 Chrome extension for one-click recipe capture
+* ⚡ **Background recipe caching (default)**
+* 🧠 Smart parsing (JSON-LD → fallback scraping → rendering)
+* 🔄 Easy switching between modes
+* 🛠️ Lightweight Admin UI (no bloat, just control)
 
 ---
 
-### 🖥 Admin Web UI (Port 8080)
+## 🧰 Tech Stack
 
-* Toggle between Menu and Recipe modes
-* Search, add, edit, delete recipes
-* Filter recipes by:
-
-  * Type (Breakfast, Dinner, etc.)
-  * Source
-  * File type
-  * Layout
-* Preview current display output
-* Trigger refresh jobs
-* Restore last menu image
+* Python (Flask-based admin + services)
+* Beautiful Soup (HTML parsing)
+* Playwright (for stubborn JS-heavy sites)
+* PIL / Pillow (image processing)
+* Raspberry Pi (Zero 2 W works great)
+* Waveshare 13.3" e-ink display
 
 ---
 
-### ⚙️ Smart Rendering Pipeline
+## 📦 Project Structure
 
-* Lockfile protection (prevents concurrent runs)
-* Image diff detection
-* Cached rendering for performance
-* Playwright fallback for complex websites
-* Automatic font scaling for layout fit
-
----
-
-## 🏗 Project Structure
-
-```text
-inky-pi-project/
-├── inky_menu.py                 # Menu rendering engine
-├── render_recipe_mode.py        # Recipe rendering engine
-├── inky_menu_config.ini         # Local config (NOT committed)
-├── requirements.txt
-│
+Blackcap-Pi/
+├── Blackcap-Pi-Extension/      # Chrome extension
 ├── inky_admin/
-│   ├── inky_admin_app.py        # Flask web server
-│   ├── templates/
-│   │   └── index.html           # Admin UI
-│   └── static/
-│       ├── style.css
-│       └── icons/images
-│
-├── recipe_cache/                # Cached PDFs & images (ignored)
-├── noun_cache/                  # Cached icons (ignored)
-```
+│   └── inky_admin_app.py       # Admin UI server
+├── inky_menu.py                # Menu rendering logic
+├── render_recipe_mode.py       # Recipe display renderer
+├── config.ini                  # Configuration
+├── inky_env/                   # Python virtual environment (local)
+└── README.md
 
 ---
 
-## ⚙️ Requirements
+## 🚀 Getting Started
 
-* Raspberry Pi (tested on Pi 4 / Zero 2 W)
-* Waveshare 13.3" e-ink display (or similar)
-* Python **3.13**
-* Raspberry Pi OS
+### 1. Clone the Repo
 
----
-
-## 🛠 Installation
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/rbolinger/Blackcap-Pi.git
+git clone https://github.com/<your-repo>/Blackcap-Pi.git
 cd Blackcap-Pi
-```
 
 ---
 
-### 2. Create virtual environment
+### 2. 🐍 Create the Python Environment
 
-```bash
-python3 -m venv inky_env
-source inky_env/bin/activate
-```
+Blackcap Pi expects a dedicated virtual environment at:
 
----
+/home/pi/inky_env
 
-### 3. Install dependencies
+Create it:
 
-```bash
+python3 -m venv /home/pi/inky_env
+
+Activate it:
+
+source /home/pi/inky_env/bin/activate
+
+Install dependencies:
+
 pip install -r requirements.txt
-playwright install
-```
 
 ---
 
-### 4. Configure the system
+### 3. ⚙️ Configure
 
-```bash
-cp inky_menu_config.ini.example inky_menu_config.ini
-nano inky_menu_config.ini
-```
+Edit:
 
-Set:
+config.ini
 
-* API keys (Noun Project)
-* Display dimensions
-* Script paths
+Set things like:
+
+* Menu source URL
+* Display preferences
+* API settings
 
 ---
 
-### 5. Run the admin UI
+### 4. ▶️ Run the Admin UI
 
-```bash
-cd inky_admin
-python inky_admin_app.py
-```
+/home/pi/inky_env/bin/python3 inky_admin/inky_admin_app.py
 
-Open in browser:
+Open:
 
-```text
 http://<raspberry-pi-ip>:8080
-```
 
 ---
 
-## 🔄 Usage
+## 🔌 Chrome Extension (Recipe Capture)
 
-### Menu Mode
-
-* Displays menu data
-* Adds icons automatically
-* Only updates when content changes
+Because copying recipes manually is a crime.
 
 ---
 
-### Recipe Mode
+### 📦 Location
 
-1. Open admin UI
-2. Search or add a recipe
-3. Select it
-4. Click **Render Recipe**
-
-The system:
-
-* Fetches content
-* Builds cached PDF
-* Extracts image
-* Displays it on e-ink
+Blackcap-Pi-Extension/
 
 ---
 
-## 🧠 Key Concepts
+### 🛠 Install (Developer Mode)
 
-### Smart Diff Rendering
+1. Go to:
+   chrome://extensions/
 
-Avoids unnecessary display refreshes (important for e-ink longevity)
+2. Enable **Developer Mode**
 
-### Recipe Caching
+3. Click **Load unpacked**
 
-Stored in `/recipe_cache`
-Reduces load times and avoids repeated scraping
-
-### Lockfile System
-
-Prevents multiple scripts from running simultaneously
+4. Select:
+   Blackcap-Pi/Blackcap-Pi-Extension
 
 ---
 
-## 🔐 Security Notes
+### ⚙️ Configure
 
-The following are intentionally excluded from Git:
+Click the extension and set:
 
-* `inky_menu_config.ini`
-* API keys
-* Cached images / PDFs
-* Tokens or credentials
+http://<raspberry-pi-ip>:8080
 
----
-
-## 🛠 Troubleshooting
-
-### Display not updating
-
-* Check lockfile
-* Verify GPIO permissions
-* Restart script
-
-### Recipe image not loading
-
-* Some sites block direct requests
-* Playwright fallback is used automatically
+(Or your HTTPS endpoint if you’ve secured it 🔒)
 
 ---
 
-## 🚧 Roadmap / Ideas
+## ⚡ How Recipe Capture Works
 
-* Automatic recipe rotation
-* Scheduled mode switching
-* Mobile-optimized UI
-* Git-based auto-update
-* Multi-display support
+### 🧠 Smart Extraction
 
----
+When you click the extension:
 
-## 📸 Screenshots
-
-*Add screenshots here:*
-
-* Admin UI
-* Menu display
-* Recipe display
+* **Name** → Page title
+* **Description** → <Recipe Title> from <Site Name>
+* **Source** → URL
 
 ---
 
-## 🧑‍💻 Author
+### ⚡ Default Behavior: Background Caching
 
-Ryan Bolinger
+👉 This is important:
+
+When you hit **Send to Blackcap Pi**:
+
+* The recipe is fetched
+* Parsed
+* Images extracted
+* Stored locally
+
+🧊 **It does NOT immediately render to the display**
 
 ---
 
-## 📄 License
+### 🎯 Why?
 
-Currently unlicensed. Consider MIT or Apache 2.0 for public use.
+* Faster later rendering ⚡
+* Works offline 📴
+* Avoids re-scraping sites 🌐
+* Keeps display transitions intentional
+
+---
+
+### 🖥️ To Show It
+
+1. Open Admin UI
+2. Select recipe
+3. Click:
+   Render Recipe
+
+Boom. Kitchen-ready.
+
+---
+
+## 🔄 Display Modes
+
+### 📅 Menu Mode (Default)
+
+* Passive display
+* Auto-updating
+* Great for school menus / schedules
+
+---
+
+### 🍽️ Recipe Mode
+
+* Clean, high-contrast recipe layout
+* Built for actual cooking (not scrolling)
+
+---
+
+### 🔁 Switching Modes
+
+In Admin UI:
+
+* Select recipe → Render Recipe
+* Exit → Back to Menu
+
+---
+
+## 🛠 Admin UI
+
+http://<raspberry-pi-ip>:8080
+
+From here you can:
+
+* 📚 View cached recipes
+* 🍽️ Render recipes
+* 🔄 Switch modes
+* ⚙️ Adjust settings
+* 👀 Monitor system
+
+---
+
+## 🧠 Parsing Strategy (Under the Hood)
+
+Blackcap Pi tries multiple approaches:
+
+1. JSON-LD (cleanest)
+2. Beautiful Soup scraping
+3. Playwright fallback (for JS-heavy sites)
+4. Image extraction + caching
+
+Basically: it tries really hard to make messy websites usable.
+
+---
+
+## 📱 Mobile Control (Next Up)
+
+Coming soon:
+
+* Tap-to-render recipes
+* Toggle modes
+* Minimal mobile UI (no app install needed)
+
+---
+
+## 🖨 Hardware
+
+* Raspberry Pi Zero 2 W
+* Waveshare 13.3" e-ink
+* Custom 3D-printed case (Instructables coming 👀)
+
+---
+
+## 🚧 Roadmap
+
+* 📱 Mobile UI
+* 🔐 Authentication
+* ☁️ Secure remote access
+* 🔄 Scheduled recipe rotation
+* 🎨 Color display version (Blackcap Pi Spectrum?)
+
+---
+
+## 💡 Philosophy
+
+Blackcap Pi is built to be:
+
+* Calm
+* Focused
+* Useful
+* Invisible when it should be
+
+No notifications. No distractions. Just the right information at the right time.
+
+---
+
+## 🙌 Contributions
+
+Ideas, tweaks, improvements — all welcome.
