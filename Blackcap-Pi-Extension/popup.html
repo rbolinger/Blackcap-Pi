@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Send to Blackcap Pi</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      width: 340px;
+      padding: 12px;
+    }
+
+    h3 {
+      margin-top: 0;
+    }
+
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 4px;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 54px;
+    }
+
+    button {
+      margin-top: 14px;
+      padding: 8px;
+      cursor: pointer;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-weight: normal;
+    }
+
+    .checkbox-row input {
+      width: auto;
+      margin: 0;
+    }
+
+    .status {
+      margin-top: 10px;
+      font-size: 0.9em;
+      min-height: 20px;
+    }
+
+    .status.ok {
+      color: #166534;
+    }
+
+    .status.error {
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+  <h3>Send to Blackcap Pi</h3>
+
+  <label>Blackcap Pi API URL</label>
+  <input id="apiBase" value="http://blackcap-pi.local:8080">
+
+  <label>Name</label>
+  <input id="name">
+
+  <label>Description</label>
+  <textarea id="description"></textarea>
+
+  <label>Recipe Type</label>
+  <select id="recipeType">
+    <option>Breakfast</option>
+    <option>Lunch</option>
+    <option selected>Dinner</option>
+    <option>Side</option>
+    <option>Snack</option>
+    <option>Dessert</option>
+  </select>
+
+  <label>Layout</label>
+  <select id="layout">
+    <option value="single_page">Single Page</option>
+    <option value="two_page" selected>Two Page</option>
+  </select>
+
+  <label class="checkbox-row">
+    <input type="checkbox" id="selectAfterAdd">
+    Select after adding
+  </label>
+
+  <label class="checkbox-row">
+    <input type="checkbox" id="cacheAsync" checked>
+    Build cache in background
+  </label>
+
+  <button id="sendBtn">Send Recipe</button>
+
+  <div class="status" id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

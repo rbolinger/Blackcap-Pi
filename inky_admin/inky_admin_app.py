@@ -45,6 +45,7 @@ def load_config() -> configparser.ConfigParser:
         "normal_mode",
         "recipe_mode",
         "recipe_repository",
+        "api",
         "menu",
         "noun_project",
         "display",
@@ -74,6 +75,11 @@ def load_config() -> configparser.ConfigParser:
     config["recipe_mode"].setdefault("script_path", "/home/pi/render_recipe_mode.py")
     config["recipe_mode"].setdefault("selected_recipe_id", "")
     config["recipe_repository"].setdefault("repo_path", "/home/pi/inky_recipe_repo.json")
+
+    # Optional token for Chrome extension / API integrations. Leave blank to allow LAN-only
+    # unauthenticated access, or set [api] extension_token and send:
+    # Authorization: Bearer <token>
+    config["api"].setdefault("extension_token", "")
 
     # Preview image paths. final_preview remains the normal menu image.
     # recipe_preview remains the recipe image. current_preview is the shared
@@ -139,6 +145,103 @@ def save_recipe_repo(config: configparser.ConfigParser, repo: dict) -> None:
     with path.open("w", encoding="utf-8") as f:
         json.dump(repo, f, indent=2, ensure_ascii=False)
         f.write("\n")
+
+
+def configured_api_token(config: configparser.ConfigParser) -> str:
+    return cfg(config, "api", "extension_token").strip()
+
+
+def is_api_request_authorized(config: configparser.ConfigParser) -> bool:
+    expected = configured_api_token(config)
+    if not expected:
+        # Token is optional for LAN-only usage. Set [api] extension_token to require it.
+        return True
+
+    auth_header = request.headers.get("Authorization", "")
+    prefix = "Bearer "
+    if auth_header.startswith(prefix):
+        supplied = auth_header[len(prefix):].strip()
+    else:
+        supplied = request.headers.get("X-Blackcap-Token", "").strip()
+
+    return supplied == expected
+
+
+def recipe_payload_bool(payload, key: str, default: bool = False) -> bool:
+    value = payload.get(key, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "on"}
+
+
+def add_or_update_recipe_from_payload(config: configparser.ConfigParser, payload, *, build_cache: bool = True) -> tuple[dict, bool, str]:
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise ValueError("Recipe name is required.")
+
+    repo = load_recipe_repo(config)
+    raw_recipes = [r for r in repo.get("recipes", []) if isinstance(r, dict)]
+    existing_for_ids = [normalize_recipe_record(r) for r in raw_recipes]
+
+    requested_id = str(payload.get("recipe_id", "")).strip()
+    updating = bool(requested_id)
+
+    recipe = normalize_recipe_record({
+        "id": requested_id or name,
+        "name": name,
+        "description": payload.get("description", ""),
+        "source": payload.get("source", "web"),
+        "url": payload.get("url", ""),
+        "layout": payload.get("layout", "two_page"),
+        "file_type": payload.get("file_type", "html"),
+        "recipe_type": payload.get("recipe_type", "Dinner"),
+    })
+    if not recipe["url"]:
+        raise ValueError("Recipe URL is required.")
+
+    if updating:
+        found = False
+        for idx, item in enumerate(raw_recipes):
+            if str(item.get("id", "")).strip() == requested_id:
+                preserved = dict(item)
+                preserved.update(recipe)
+                preserved["id"] = requested_id
+                raw_recipes[idx] = preserved
+                recipe = normalize_recipe_record(preserved)
+                found = True
+                break
+        if not found:
+            raise LookupError("Recipe to edit was not found.")
+    else:
+        recipe["id"] = make_unique_recipe_id(existing_for_ids, recipe["name"])
+        raw_recipes.append(recipe)
+
+    repo["recipes"] = raw_recipes
+    save_recipe_repo(config, repo)
+
+    cache_ok = False
+    cache_message = "Cache generation skipped."
+    if build_cache:
+        cache_ok, cache_message = build_recipe_cache(config, recipe["id"])
+
+    repo_after_cache = load_recipe_repo(config)
+    saved_recipe = next(
+        (normalize_recipe_record(r) for r in repo_after_cache.get("recipes", []) if isinstance(r, dict) and str(r.get("id", "")) == recipe["id"]),
+        recipe,
+    )
+
+    selected_after_add = recipe_payload_bool(payload, "select_after_add", False)
+    if selected_after_add:
+        if "recipe_mode" not in config:
+            config["recipe_mode"] = {}
+        config["recipe_mode"]["selected_recipe_id"] = recipe["id"]
+        save_config(config)
+        try:
+            copy_recipe_image_to_current(config, saved_recipe)
+        except Exception:
+            pass
+
+    return saved_recipe, cache_ok, cache_message
 
 
 def normalize_recipe_record(recipe: dict) -> dict:
@@ -281,6 +384,39 @@ def build_recipe_cache(config: configparser.ConfigParser, recipe_id: str) -> tup
     return True, output or "Recipe cache created."
 
 
+
+def start_recipe_cache_build(config: configparser.ConfigParser, recipe_id: str) -> tuple[bool, str]:
+    """Launch a recipe cache build in the background and return immediately."""
+    python_path = path_from_value(cfg(config, "recipe_mode", "python_path"))
+    script_path = path_from_value(cfg(config, "recipe_mode", "script_path"))
+
+    if not python_path:
+        return False, "Recipe Python Path is not set; cache build was not queued."
+    if not script_path:
+        return False, "Recipe Script Path is not set; cache build was not queued."
+    if not python_path.exists():
+        return False, f"Recipe Python Path does not exist: {python_path}"
+    if not script_path.exists():
+        return False, f"Recipe Script Path does not exist: {script_path}"
+
+    env = os.environ.copy()
+    env["INKY_CONFIG_PATH"] = str(CONFIG_PATH)
+
+    try:
+        proc = subprocess.Popen(
+            [str(python_path), str(script_path), "--cache-only", "--recipe-id", recipe_id, "--refresh-cache"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(script_path.parent),
+            env=env,
+            start_new_session=True,
+        )
+    except Exception as exc:
+        return False, f"Recipe was saved, but async cache build could not be started: {exc}"
+
+    return True, f"Recipe cache build started in background. PID: {proc.pid}"
+
+
 def path_from_value(raw: str) -> Path | None:
     raw = (raw or "").strip()
     if not raw:
@@ -363,6 +499,90 @@ def collect_missing_required(config: configparser.ConfigParser) -> List[str]:
         if cfg(config, section, key).strip() == "":
             missing.append(f"[{section}] {key}")
     return missing
+
+
+@app.after_request
+def add_api_cors_headers(response):
+    # Allows a Chrome extension on the local network to call the admin API.
+    response.headers.setdefault("Access-Control-Allow-Origin", "*")
+    response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Blackcap-Token")
+    response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    return response
+
+
+@app.route("/api/recipes/add", methods=["POST", "OPTIONS"])
+def api_add_recipe_from_extension():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    config = load_config()
+    if not is_api_request_authorized(config):
+        return jsonify({"ok": False, "error": "Unauthorized."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "Expected a JSON object."}), 400
+
+    # Extension-friendly defaults. Cache builds default to async so the browser
+    # extension/API call returns quickly while the Pi builds PDF/image cache in
+    # the background.
+    payload.setdefault("source", "web")
+    payload.setdefault("file_type", "html")
+    payload.setdefault("layout", "two_page")
+    payload.setdefault("recipe_type", "Dinner")
+    payload.setdefault("refresh_cache", True)
+    payload.setdefault("cache_async", True)
+    payload.setdefault("select_after_add", False)
+
+    refresh_cache = recipe_payload_bool(payload, "refresh_cache", True)
+    cache_async = recipe_payload_bool(payload, "cache_async", True)
+
+    try:
+        saved_recipe, cache_ok, cache_message = add_or_update_recipe_from_payload(
+            config=config,
+            payload=payload,
+            build_cache=(refresh_cache and not cache_async),
+        )
+
+        cache_queued = False
+        if refresh_cache and cache_async:
+            queued_ok, queued_message = start_recipe_cache_build(config, saved_recipe["id"])
+            cache_queued = queued_ok
+            cache_ok = None if queued_ok else False
+            cache_message = queued_message
+        elif not refresh_cache:
+            cache_ok = False
+            cache_message = "Cache generation skipped."
+
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not save recipe: {exc}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "recipe": saved_recipe,
+        "recipe_image_url": recipe_image_url_for_record(saved_recipe),
+        "cache_ok": cache_ok,
+        "cache_queued": cache_queued,
+        "cache_message": cache_message,
+    })
+
+
+@app.route("/api/recipes/ping", methods=["GET", "OPTIONS"])
+def api_recipes_ping():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    config = load_config()
+    authorized = is_api_request_authorized(config)
+    return jsonify({
+        "ok": authorized,
+        "service": "Blackcap Pi Admin",
+        "display_mode": get_display_mode(config),
+        "auth_required": bool(configured_api_token(config)),
+    }), (200 if authorized else 401)
 
 
 @app.route("/", methods=["GET"])
@@ -557,69 +777,14 @@ def add_recipe():
     else:
         payload = request.form
 
-    name = str(payload.get("name", "")).strip()
-    if not name:
-        return jsonify({"ok": False, "error": "Recipe name is required."}), 400
-
-    config = load_config()
-    repo = load_recipe_repo(config)
-    raw_recipes = [r for r in repo.get("recipes", []) if isinstance(r, dict)]
-    existing_for_ids = [normalize_recipe_record(r) for r in raw_recipes]
-
-    requested_id = str(payload.get("recipe_id", "")).strip()
-    updating = bool(requested_id)
-
-    recipe = normalize_recipe_record({
-        "id": requested_id or name,
-        "name": name,
-        "description": payload.get("description", ""),
-        "source": payload.get("source", "web"),
-        "url": payload.get("url", ""),
-        "layout": payload.get("layout", "two_page"),
-        "file_type": payload.get("file_type", ""),
-        "recipe_type": payload.get("recipe_type", "Dinner"),
-    })
-    if not recipe["url"]:
-        return jsonify({"ok": False, "error": "Recipe URL is required."}), 400
-
-    if updating:
-        found = False
-        for idx, item in enumerate(raw_recipes):
-            if str(item.get("id", "")).strip() == requested_id:
-                preserved = dict(item)
-                preserved.update(recipe)
-                preserved["id"] = requested_id
-                raw_recipes[idx] = preserved
-                recipe = normalize_recipe_record(preserved)
-                found = True
-                break
-        if not found:
-            return jsonify({"ok": False, "error": "Recipe to edit was not found."}), 404
-    else:
-        recipe["id"] = make_unique_recipe_id(existing_for_ids, recipe["name"])
-        raw_recipes.append(recipe)
-
-    repo["recipes"] = raw_recipes
-    save_recipe_repo(config, repo)
-
-    cache_ok, cache_message = build_recipe_cache(config, recipe["id"])
-
-    repo_after_cache = load_recipe_repo(config)
-    saved_recipe = next(
-        (normalize_recipe_record(r) for r in repo_after_cache.get("recipes", []) if isinstance(r, dict) and str(r.get("id", "")) == recipe["id"]),
-        recipe,
-    )
-
-    selected_after_add = str(payload.get("select_after_add", "true")).lower() in {"true", "1", "yes", "on"}
-    if selected_after_add:
-        if "recipe_mode" not in config:
-            config["recipe_mode"] = {}
-        config["recipe_mode"]["selected_recipe_id"] = recipe["id"]
-        save_config(config)
-        try:
-            copy_recipe_image_to_current(config, saved_recipe)
-        except Exception:
-            pass
+    try:
+        saved_recipe, cache_ok, cache_message = add_or_update_recipe_from_payload(config=load_config(), payload=payload, build_cache=True)
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not save recipe: {exc}"}), 500
 
     return jsonify({
         "ok": True,
@@ -682,7 +847,7 @@ def save_settings():
 
     # Ensure all sections exist before assignment.
     for section in [
-        "inky_admin", "general", "normal_mode", "recipe_mode", "recipe_repository",
+        "inky_admin", "general", "normal_mode", "recipe_mode", "recipe_repository", "api",
         "menu", "noun_project", "display", "paths", "footer", "processing",
     ]:
         if section not in config:

@@ -1057,7 +1057,8 @@ def main() -> None:
         print("Recipe cache build complete.")
         return
 
-    acquire_lock(runtime["lock_path"])
+    if not getattr(args, "cache_only", False):
+        acquire_lock(runtime["lock_path"])
     img = render_selected_recipe(runtime, refresh_cache=args.refresh_cache, recipe_id=recipe_id)
     img.save(runtime["recipe_preview_path"])
     img.save(runtime["current_preview_path"])
