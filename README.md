@@ -8,6 +8,12 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 
 ## 📸 Preview
 
+### 📅 Menu Mode with Smart Icons
+
+![Menu with Icons](docs/images/menu-with-icons.png)
+
+*Automatically generated icons based on weekly menu content*
+
 ### 🌐 Chrome Extension (Send Recipe)
 
 ![Chrome Extension](docs/images/extension.png)
@@ -29,11 +35,12 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 ## ✨ Features
 
 * 🖥️ Optimized for Waveshare e-ink displays
+* 📅 Automated **Menu Mode** from a published Google Sheet
 * 🍽️ Dedicated **Recipe Mode** (clean, readable layouts)
-* 📅 Automated **Menu Mode** (set it and forget it)
 * 🌐 Chrome extension for one-click recipe capture
 * ⚡ **Background recipe caching (default)**
 * 🧠 Smart parsing (JSON-LD → fallback scraping → rendering)
+* 🎨 Dynamic footer icons powered by OCR + Noun Project
 * 🔄 Easy switching between modes
 * 🛠️ Lightweight Admin UI (no bloat, just control)
 * 📱 Mobile-friendly control interface (`/mobile`)
@@ -57,12 +64,13 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 Blackcap-Pi/
 ├── Blackcap-Pi-Extension/      # 🌐 Chrome extension
 ├── inky_admin/                 # 🛠 Admin UI
-│   └── inky_admin_app.py       #   └── Flask server
+│   └── inky_admin_app.py
 ├── inky_menu.py                # 📅 Menu rendering logic
 ├── render_recipe_mode.py       # 🍽️ Recipe display renderer
+├── inky_blackout.py            # 🧼 Monthly deep clean
 ├── inky_menu_config.ini        # ⚙️ Configuration
-├── inky_env/                   # 🐍 Python virtual environment (local)
-└── README.md                   # 📖 Project documentation
+├── inky_env/                   # 🐍 Python virtual environment
+└── README.md
 ```
 
 ---
@@ -78,20 +86,10 @@ cd Blackcap-Pi
 
 ### 2. 🐍 Create the Python Environment
 
-Blackcap Pi expects a dedicated virtual environment at:
-
 /home/pi/inky_env
 
-Create it:
-
 python3 -m venv /home/pi/inky_env
-
-Activate it:
-
 source /home/pi/inky_env/bin/activate
-
-Install dependencies:
-
 pip install -r requirements.txt
 
 ---
@@ -100,23 +98,116 @@ pip install -r requirements.txt
 
 Edit:
 
-config.ini
+inky_menu_config.ini
 
-Set things like:
+Set:
 
-* Menu source URL
-* Display preferences
-* API settings
+* Google Sheet URL
+* Display settings
+* OCR / icon settings
 
 ---
 
-### 4. ▶️ Run the Admin UI
+### 4. ▶️ Run Admin UI
 
 /home/pi/inky_env/bin/python3 inky_admin/inky_admin_app.py
 
 Open:
 
 `http://<raspberry-pi-ip>:8080`
+
+---
+
+## 📅 Menu Mode
+
+Menu Mode is the default behavior of Blackcap Pi.
+
+You maintain a **Google Sheet**, publish it, and Blackcap Pi automatically renders it to the display.
+
+---
+
+### 🧾 How It Works
+
+1. Update your weekly menu in Google Sheets
+2. Publish the sheet to the web
+3. Blackcap Pi pulls and renders it
+4. OCR extracts keywords
+5. Icons are generated and added to the footer
+6. Display updates only if changes are detected
+
+---
+
+### 🧠 Smart Update Mode
+
+The system avoids unnecessary refreshes:
+
+* No change → no update
+* Change detected → re-render + update
+
+---
+
+## 🎨 OCR + Noun Project Footer
+
+After rendering the menu, Blackcap Pi enhances it with visual context using icons.
+
+---
+
+### 🧾 Example
+
+From this menu:
+
+```
+Wednesday: Meatball Sandwich w/Salad
+Saturday: Swedish Meatballs & Egg Noodles w/Salad
+Sunday: Chicken Wraps w/Chips
+```
+
+Blackcap Pi extracts keywords like:
+
+* chicken
+* bread
+* sandwich
+* noodles
+* salad
+
+---
+
+### 🧾 Example Configuration
+
+```csv
+chicken,chicken
+bread,bread
+sandwich,sandwich
+noodles,noodles
+salad,leaf
+```
+
+---
+
+### ⚡ Behavior
+
+* Icons are cached after first use
+* Unknown words are skipped
+* Common noise words are ignored
+* Footer is rebuilt dynamically
+
+---
+
+## ⏰ Automation (Cron)
+
+```cron
+50 5 1 * * /home/pi/inky_env/bin/python3 /home/pi/inky_blackout.py
+0 6 1 * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py --full-refresh
+30,40,50 6 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+*/10 7-21 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+0,10,20,30 22 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+```
+
+---
+
+## 🧼 Monthly Deep Clean
+
+Runs black → white → reset cycle to reduce ghosting.
 
 ---
 
