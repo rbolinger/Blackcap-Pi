@@ -8,8 +8,6 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 
 ## 📸 Preview
 
-> Place these images in: `docs/images/`
-
 ### 🌐 Chrome Extension (Send Recipe)
 
 ![Chrome Extension](docs/images/extension.png)
