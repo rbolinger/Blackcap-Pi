@@ -1182,6 +1182,16 @@ def mobile_render_recipe():
     if not recipe:
         return jsonify({"ok": False, "error": "Recipe not found."}), 404
 
+    # Selection/preview should not switch modes. Only switch to Recipe Mode
+    # once we know the recipe render can actually start.
+    with refresh_lock:
+        if refresh_status.running:
+            return jsonify({
+                "ok": False,
+                "error": "A refresh is already running.",
+                "display_mode": get_display_mode(config),
+            }), 409
+
     if "recipe_mode" not in config:
         config["recipe_mode"] = {}
     if "general" not in config:
@@ -1196,19 +1206,27 @@ def mobile_render_recipe():
     except Exception:
         pass
 
-    started, message = _start_refresh_if_idle("recipe")
+    thread = threading.Thread(target=run_refresh_thread, args=("recipe",), daemon=True)
+    thread.start()
     return jsonify({
-        "ok": started,
-        "message": message,
+        "ok": True,
+        "message": "Recipe refresh started.",
         "display_mode": "recipe",
         "recipe": recipe,
         "recipe_image_url": recipe_image_url_for_record(recipe),
-    }), (200 if started else 409)
+    })
 
 
 @app.route("/mobile/normal-mode", methods=["POST"])
 def mobile_normal_mode():
     config = load_config()
+    if get_display_mode(config) != "recipe":
+        return jsonify({
+            "ok": False,
+            "error": "Back to Menu is only available after a recipe has been rendered.",
+            "display_mode": get_display_mode(config),
+        }), 400
+
     if "general" not in config:
         config["general"] = {}
     config["general"]["display_mode"] = "normal"
