@@ -33,7 +33,12 @@ echo "Adding changes..."
 git add .
 
 echo "Committing changes..."
-git commit -m "Sync latest Blackcap Pi updates" || echo "No changes to commit."
+if git diff --cached --quiet; then
+  echo "No changes to commit."
+else
+  git commit -m "Sync latest Blackcap Pi updates"
+  git push
+fi
 
 echo "Pushing to GitHub..."
 git push
