@@ -68,7 +68,7 @@ def acquire_lock(lock_path: Path) -> None:
     try:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        raise RecipeModeError("Another Inky Pi display update is already running. Recipe update skipped.")
+        raise RecipeModeError("Another Blackcap Pi display update is already running. Recipe update skipped.")
     lock_file.seek(0)
     lock_file.truncate()
     lock_file.write(str(os.getpid()))
@@ -105,7 +105,7 @@ def load_config(require_recipe_mode: bool = True) -> tuple[configparser.ConfigPa
     runtime: dict[str, Any] = {}
     runtime["display_mode"] = config.get("general", "display_mode", fallback="normal").strip().lower()
     if require_recipe_mode and runtime["display_mode"] != "recipe":
-        raise RecipeModeError(f"Inky Pi is in {runtime['display_mode']} mode; recipe renderer skipped.")
+        raise RecipeModeError(f"Blackcap Pi is in {runtime['display_mode']} mode; recipe renderer skipped.")
 
     runtime["display_width"] = config.getint("display", "display_width", fallback=1600)
     runtime["display_height"] = config.getint("display", "display_height", fallback=1200)
@@ -1037,7 +1037,7 @@ def update_display(img: Image.Image, dry_run: bool = False) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Render selected Inky Pi recipe mode item.")
+    parser = argparse.ArgumentParser(description="Render selected Blackcap Pi recipe mode item.")
     parser.add_argument("--dry-run", action="store_true", help="Render preview but do not update the e-ink display.")
     parser.add_argument("--refresh-cache", action="store_true", help="Force recipe cache rebuild even if cached PDF is current.")
     parser.add_argument("--cache-only", action="store_true", help="Build/update the cached recipe PDF only; do not save previews or update the display.")

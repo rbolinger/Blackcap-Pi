@@ -140,7 +140,7 @@ def load_config():
 RUNTIME = load_config()
 
 if RUNTIME.get("display_mode", "normal") != "normal":
-    print(f"Inky Pi is in {RUNTIME['display_mode']} display mode; normal menu update skipped.")
+    print(f"Blackcap Pi is in {RUNTIME['display_mode']} display mode; normal menu update skipped.")
     sys.exit(1)
 
 def acquire_lock():

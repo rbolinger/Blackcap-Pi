@@ -1,4 +1,4 @@
-# Inky Pi Display
+# Blackcap Pi Display
 
 A Raspberry Pi project for rendering menus and recipes to a Waveshare e-ink display, powered by a smart rendering pipeline and a web-based admin UI.
 
@@ -6,7 +6,7 @@ A Raspberry Pi project for rendering menus and recipes to a Waveshare e-ink disp
 
 ## 📸 Overview
 
-Inky Pi turns a Raspberry Pi + e-ink display into a dynamic information panel for:
+Blackcap Pi turns a Raspberry Pi + e-ink display into a dynamic information panel for:
 
 * 📅 School or weekly menus
 * 🍽 Recipes from the web, Dropbox, or Google Drive
