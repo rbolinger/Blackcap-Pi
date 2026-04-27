@@ -1059,21 +1059,17 @@ def run_refresh_thread(mode: str) -> None:
             refresh_status.running = False
 
 
-@app.route("/restore-last-menu-image", methods=["POST"])
-def restore_last_menu_image():
-    config = load_config()
-    if get_display_mode(config) != "normal":
-        return jsonify({"ok": False, "error": "Restore Last Menu Image is only available in Normal Menu mode."}), 400
-
+def restore_last_menu_image_to_display(config: configparser.ConfigParser) -> tuple[bool, str, int]:
+    """Copy/display the last rendered menu image without running a new menu refresh."""
     preview_path = path_from_value(cfg(config, "paths", "final_preview"))
     if not preview_path or not preview_path.exists():
-        return jsonify({"ok": False, "error": "Last menu image not found. Run a normal refresh first."}), 404
+        return False, "Last menu image not found. Run a normal refresh first.", 404
 
     current_preview_path = path_from_value(cfg(config, "paths", "current_preview")) or Path("/home/pi/current_view.png")
 
     python_path = path_from_value(cfg(config, "normal_mode", "python_path")) or path_from_value(cfg(config, "paths", "python_path"))
     if not python_path:
-        return jsonify({"ok": False, "error": "Normal Python Path is not set."}), 400
+        return False, "Normal Python Path is not set.", 400
 
     inline_code = """
 import sys
@@ -1103,15 +1099,25 @@ print(f"Current display preview saved to: {current_preview_path}")
             cwd=str(preview_path.parent),
         )
     except subprocess.TimeoutExpired:
-        return jsonify({"ok": False, "error": "Timed out while restoring the last menu image."}), 500
+        return False, "Timed out while restoring the last menu image.", 500
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return False, str(exc), 500
 
     output = ((result.stdout or "") + (result.stderr or "")).strip()
     if result.returncode != 0:
-        return jsonify({"ok": False, "error": output or f"Restore failed with return code {result.returncode}."}), 500
+        return False, output or f"Restore failed with return code {result.returncode}.", 500
 
-    return jsonify({"ok": True, "message": output or "Last menu image restored to display."})
+    return True, output or "Last menu image restored to display.", 200
+
+
+@app.route("/restore-last-menu-image", methods=["POST"])
+def restore_last_menu_image():
+    config = load_config()
+    if get_display_mode(config) != "normal":
+        return jsonify({"ok": False, "error": "Restore Last Menu Image is only available in Normal Menu mode."}), 400
+
+    ok, message, status_code = restore_last_menu_image_to_display(config)
+    return jsonify({"ok": ok, "message" if ok else "error": message}), status_code
 
 
 @app.route("/run-refresh/<mode>", methods=["POST"])
@@ -1127,6 +1133,93 @@ def run_refresh(mode: str):
     thread.start()
     flash(f"{mode.title()} refresh started.", "success")
     return redirect(url_for("index"))
+
+
+
+def _start_refresh_if_idle(mode: str) -> tuple[bool, str]:
+    """Start a display refresh in the background if one is not already running."""
+    with refresh_lock:
+        if refresh_status.running:
+            return False, "A refresh is already running."
+    thread = threading.Thread(target=run_refresh_thread, args=(mode,), daemon=True)
+    thread.start()
+    return True, f"{mode.title()} refresh started."
+
+
+@app.route("/mobile", methods=["GET"])
+def mobile_control():
+    config = load_config()
+    recipes = list_recipes(config)
+    for recipe in recipes:
+        recipe["recipe_image_url"] = recipe_image_url_for_record(recipe)
+    selected_recipe = get_selected_recipe(config)
+    if selected_recipe:
+        selected_recipe["recipe_image_url"] = recipe_image_url_for_record(selected_recipe)
+    recipe_types = sorted({
+        str(recipe.get("recipe_type", "")).strip()
+        for recipe in recipes
+        if str(recipe.get("recipe_type", "")).strip()
+    }, key=lambda value: value.lower())
+    return render_template(
+        "mobile.html",
+        display_mode=get_display_mode(config),
+        recipes=recipes,
+        recipe_types=recipe_types,
+        selected_recipe=selected_recipe,
+        status=refresh_status,
+    )
+
+
+@app.route("/mobile/render-recipe", methods=["POST"])
+def mobile_render_recipe():
+    payload = request.get_json(silent=True) or {}
+    recipe_id = str(payload.get("recipe_id", "")).strip() or request.form.get("recipe_id", "").strip()
+    if not recipe_id:
+        return jsonify({"ok": False, "error": "Choose a recipe first."}), 400
+
+    config = load_config()
+    recipe = next((r for r in list_recipes(config) if r["id"] == recipe_id), None)
+    if not recipe:
+        return jsonify({"ok": False, "error": "Recipe not found."}), 404
+
+    if "recipe_mode" not in config:
+        config["recipe_mode"] = {}
+    if "general" not in config:
+        config["general"] = {}
+
+    config["recipe_mode"]["selected_recipe_id"] = recipe_id
+    config["general"]["display_mode"] = "recipe"
+    save_config(config)
+
+    try:
+        copy_recipe_image_to_current(config, recipe)
+    except Exception:
+        pass
+
+    started, message = _start_refresh_if_idle("recipe")
+    return jsonify({
+        "ok": started,
+        "message": message,
+        "display_mode": "recipe",
+        "recipe": recipe,
+        "recipe_image_url": recipe_image_url_for_record(recipe),
+    }), (200 if started else 409)
+
+
+@app.route("/mobile/normal-mode", methods=["POST"])
+def mobile_normal_mode():
+    config = load_config()
+    if "general" not in config:
+        config["general"] = {}
+    config["general"]["display_mode"] = "normal"
+    save_config(config)
+
+    ok, message, status_code = restore_last_menu_image_to_display(config)
+    return jsonify({
+        "ok": ok,
+        "message" if ok else "error": message,
+        "display_mode": "normal",
+    }), status_code
 
 
 if __name__ == "__main__":

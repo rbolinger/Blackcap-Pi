@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Blackcap Pi Mobile</title>
+  <link rel="icon" href="{{ url_for('static', filename='blackcap_pi_logo.ico') }}">
+  <style>
+    :root {
+      --bg: #f5f1ea;
+      --card: #fffaf2;
+      --ink: #1f2933;
+      --muted: #697386;
+      --line: #e2d8c9;
+      --blue: #2563eb;
+      --blue-dark: #1d4ed8;
+      --green: #15803d;
+      --red: #b91c1c;
+      --shadow: 0 8px 24px rgba(31, 41, 51, .10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #fff7ed 0, var(--bg) 44%, #eee7dc 100%);
+      color: var(--ink);
+    }
+    .mobile-wrap {
+      width: min(100%, 720px);
+      margin: 0 auto;
+      padding: 18px 14px calc(32px + env(safe-area-inset-bottom));
+    }
+    .hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .hero h1 { margin: 0; font-size: 1.75rem; line-height: 1.05; }
+    .hero p { margin: 4px 0 0; color: var(--muted); }
+    .logo {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+    .card {
+      background: rgba(255, 250, 242, .94);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 9px 12px;
+      font-weight: 800;
+      background: #e0f2fe;
+      color: #075985;
+      margin-top: 8px;
+    }
+    .status-pill.recipe { background: #dcfce7; color: #166534; }
+    .status-pill.running { background: #fef3c7; color: #92400e; }
+    label { display: block; font-weight: 800; margin-bottom: 8px; }
+    .search, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      font: inherit;
+      background: white;
+      color: var(--ink);
+      margin-bottom: 12px;
+    }
+    select { min-height: 58px; }
+    .selected-recipe {
+      display: grid;
+      grid-template-columns: 78px 1fr;
+      gap: 12px;
+      align-items: center;
+      min-height: 84px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 18px;
+      padding: 10px;
+      margin: 10px 0 14px;
+    }
+    .thumb {
+      width: 78px;
+      height: 64px;
+      border-radius: 14px;
+      background: #f3f4f6;
+      object-fit: cover;
+      border: 1px solid #e5e7eb;
+    }
+    .thumb-placeholder {
+      width: 78px;
+      height: 64px;
+      border-radius: 14px;
+      background: #f3f4f6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      border: 1px dashed #cbd5e1;
+      font-size: .78rem;
+      text-align: center;
+    }
+    .recipe-title { font-weight: 900; overflow-wrap: anywhere; }
+    .recipe-desc { color: var(--muted); font-size: .92rem; margin-top: 3px; overflow-wrap: anywhere; }
+    .button-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    button, .admin-link {
+      display: block;
+      width: 100%;
+      border: 0;
+      border-radius: 18px;
+      padding: 16px 14px;
+      min-height: 58px;
+      font: inherit;
+      font-weight: 900;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    button.primary { background: var(--blue); color: white; }
+    button.primary:hover { background: var(--blue-dark); }
+    button.normal { background: var(--green); color: white; }
+    button.secondary, .admin-link { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .toast {
+      display: none;
+      border-radius: 16px;
+      padding: 12px;
+      margin-top: 12px;
+      font-weight: 750;
+      background: #e0f2fe;
+      color: #075985;
+    }
+    .toast.error { background: #fee2e2; color: var(--red); }
+    .small { color: var(--muted); font-size: .92rem; line-height: 1.35; }
+    @media (min-width: 560px) {
+      .button-grid { grid-template-columns: 1fr 1fr; }
+      .button-grid .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="mobile-wrap">
+    <header class="hero">
+      <div>
+        <h1>🫐 Blackcap Pi</h1>
+        <p>Mobile kitchen control</p>
+        <div id="modePill" class="status-pill {{ 'recipe' if display_mode == 'recipe' else '' }} {{ 'running' if status.running else '' }}">
+          {% if status.running %}⏳ Refresh running{% elif display_mode == 'recipe' %}🍽️ Recipe Mode{% else %}📅 Menu Mode{% endif %}
+        </div>
+      </div>
+      <img src="{{ url_for('static', filename='blackcap_pi.png') }}" class="logo" alt="Blackcap Pi">
+    </header>
+
+    <section class="card">
+      <label for="recipeSearch">🔎 Find a recipe</label>
+      <input id="recipeSearch" class="search" type="search" placeholder="Search cached recipes..." autocomplete="off">
+
+      <label for="recipeTypeFilter">🏷️ Recipe type</label>
+      <select id="recipeTypeFilter">
+        <option value="">All recipe types</option>
+        {% for recipe_type in recipe_types %}
+          <option value="{{ recipe_type|e }}">{{ recipe_type }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="recipeSelect">🍽️ Choose recipe</label>
+      <select id="recipeSelect">
+        <option value="">Select a recipe...</option>
+        {% for recipe in recipes %}
+          <option
+            value="{{ recipe.id }}"
+            data-name="{{ recipe.name|e }}"
+            data-description="{{ recipe.description|e }}"
+            data-source="{{ recipe.source|e }}"
+            data-url="{{ recipe.url|e }}"
+            data-recipe-type="{{ recipe.recipe_type|e }}"
+            data-image-url="{{ recipe.recipe_image_url|e }}"
+            {% if selected_recipe and selected_recipe.id == recipe.id %}selected{% endif %}
+          >{{ recipe.name }}</option>
+        {% endfor %}
+      </select>
+
+      <div id="selectedRecipe" class="selected-recipe" aria-live="polite">
+        <div class="thumb-placeholder">No recipe</div>
+        <div>
+          <div class="recipe-title">Pick something tasty</div>
+          <div class="recipe-desc">Then render it to the e-ink display.</div>
+        </div>
+      </div>
+
+      <div class="button-grid">
+        <button id="renderButton" class="primary" type="button">🍳 Render Recipe</button>
+        <button id="normalButton" class="normal" type="button">📅 Back to Menu</button>
+        <a class="admin-link wide" href="{{ url_for('index') }}">🛠️ Full Admin UI</a>
+      </div>
+      <div id="toast" class="toast"></div>
+    </section>
+
+    <section class="card">
+      <strong>⚡ How this works</strong>
+      <p class="small">Recipes are cached when added. This page switches modes, selects the recipe, and starts the recipe display refresh. “Back to Menu” switches to normal mode and restores the last saved menu image.</p>
+    </section>
+  </main>
+
+  <script>
+    const recipeSelect = document.getElementById('recipeSelect');
+    const recipeSearch = document.getElementById('recipeSearch');
+    const recipeTypeFilter = document.getElementById('recipeTypeFilter');
+    const selectedRecipe = document.getElementById('selectedRecipe');
+    const renderButton = document.getElementById('renderButton');
+    const normalButton = document.getElementById('normalButton');
+    const toast = document.getElementById('toast');
+    const modePill = document.getElementById('modePill');
+    const allOptions = Array.from(recipeSelect.options).map(option => ({
+      value: option.value,
+      text: option.text,
+      name: option.dataset.name || '',
+      description: option.dataset.description || '',
+      source: option.dataset.source || '',
+      url: option.dataset.url || '',
+      recipeType: option.dataset.recipeType || '',
+      imageUrl: option.dataset.imageUrl || '',
+      selected: option.selected,
+    }));
+
+    function showToast(message, isError = false) {
+      toast.textContent = message;
+      toast.className = isError ? 'toast error' : 'toast';
+      toast.style.display = 'block';
+    }
+
+    function setBusy(isBusy) {
+      renderButton.disabled = isBusy;
+      normalButton.disabled = isBusy;
+      modePill.textContent = isBusy ? '⏳ Refresh running' : modePill.textContent;
+      modePill.classList.toggle('running', isBusy);
+    }
+
+    function updateSelectedCard() {
+      const option = recipeSelect.selectedOptions[0];
+      if (!option || !option.value) {
+        selectedRecipe.innerHTML = `
+          <div class="thumb-placeholder">No recipe</div>
+          <div>
+            <div class="recipe-title">Pick something tasty</div>
+            <div class="recipe-desc">Then render it to the e-ink display.</div>
+          </div>`;
+        return;
+      }
+      const name = option.dataset.name || option.textContent;
+      const description = option.dataset.description || option.dataset.url || 'Cached recipe';
+      const imageUrl = option.dataset.imageUrl || '';
+      selectedRecipe.innerHTML = `
+        ${imageUrl ? '<img class="thumb" alt="Recipe image">' : '<div class="thumb-placeholder">🍽️</div>'}
+        <div>
+          <div class="recipe-title"></div>
+          <div class="recipe-desc"></div>
+        </div>`;
+      const img = selectedRecipe.querySelector('img.thumb');
+      if (img) img.src = imageUrl;
+      selectedRecipe.querySelector('.recipe-title').textContent = name;
+      selectedRecipe.querySelector('.recipe-desc').textContent = description;
+    }
+
+    function filterRecipes() {
+      const q = recipeSearch.value.trim().toLowerCase();
+      const selectedType = recipeTypeFilter.value.trim().toLowerCase();
+      const currentValue = recipeSelect.value;
+      recipeSelect.innerHTML = '<option value="">Select a recipe...</option>';
+      for (const item of allOptions) {
+        if (!item.value) continue;
+        const haystack = [item.text, item.name, item.description, item.source, item.url, item.recipeType].join(' ').toLowerCase();
+        if (selectedType && item.recipeType.toLowerCase() !== selectedType) continue;
+        if (q && !haystack.includes(q)) continue;
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = item.text;
+        option.dataset.name = item.name;
+        option.dataset.description = item.description;
+        option.dataset.source = item.source;
+        option.dataset.url = item.url;
+        option.dataset.recipeType = item.recipeType;
+        option.dataset.imageUrl = item.imageUrl;
+        if (item.value === currentValue) option.selected = true;
+        recipeSelect.appendChild(option);
+      }
+      updateSelectedCard();
+    }
+
+    async function postJson(url, payload = {}) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || data.message || 'Request failed.');
+      }
+      return data;
+    }
+
+    renderButton.addEventListener('click', async () => {
+      const recipeId = recipeSelect.value;
+      if (!recipeId) {
+        showToast('Choose a recipe first. 🫐', true);
+        return;
+      }
+      setBusy(true);
+      showToast('Sending recipe to the display...');
+      try {
+        const data = await postJson('{{ url_for('mobile_render_recipe') }}', { recipe_id: recipeId });
+        modePill.textContent = '🍽️ Recipe Mode';
+        modePill.classList.add('recipe');
+        showToast(data.message || 'Recipe refresh started.');
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        window.setTimeout(() => setBusy(false), 1200);
+      }
+    });
+
+    normalButton.addEventListener('click', async () => {
+      setBusy(true);
+      showToast('Restoring the last menu image...');
+      try {
+        const data = await postJson('{{ url_for('mobile_normal_mode') }}');
+        modePill.textContent = '📅 Menu Mode';
+        modePill.classList.remove('recipe');
+        showToast(data.message || 'Last menu image restored.');
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        window.setTimeout(() => setBusy(false), 1200);
+      }
+    });
+
+    recipeSearch.addEventListener('input', filterRecipes);
+    recipeTypeFilter.addEventListener('change', filterRecipes);
+    recipeSelect.addEventListener('change', updateSelectedCard);
+    updateSelectedCard();
+  </script>
+</body>
+</html>
