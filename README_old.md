@@ -6,28 +6,6 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 
 ---
 
-## 📸 Preview
-
-> Place these images in: `docs/images/`
-
-### 🌐 Chrome Extension (Send Recipe)
-
-![Chrome Extension](docs/images/extension.png)
-
-### 🛠 Admin UI
-
-![Admin UI](docs/images/admin-ui.png)
-
-### 📚 Recipe Library
-
-![Recipe Library](docs/images/recipe-library.png)
-
-### 📱 Mobile Control
-
-![Mobile UI](docs/images/mobile-ui.png)
-
----
-
 ## ✨ Features
 
 * 🖥️ Optimized for Waveshare e-ink displays
@@ -38,7 +16,6 @@ Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, re
 * 🧠 Smart parsing (JSON-LD → fallback scraping → rendering)
 * 🔄 Easy switching between modes
 * 🛠️ Lightweight Admin UI (no bloat, just control)
-* 📱 Mobile-friendly control interface (`/mobile`)
 
 ---
 
@@ -154,6 +131,8 @@ Click the extension and set:
 
 http://<raspberry-pi-ip>:8080
 
+(Or your HTTPS endpoint if you’ve secured it 🔒)
+
 ---
 
 ## ⚡ How Recipe Capture Works
@@ -163,7 +142,7 @@ http://<raspberry-pi-ip>:8080
 When you click the extension:
 
 * **Name** → Page title
-* **Description** → `<Recipe Title> from <Site Name>`
+* **Description** → <Recipe Title> from <Site Name>
 * **Source** → URL
 
 ---
@@ -197,7 +176,7 @@ When you hit **Send to Blackcap Pi**:
 1. Open Admin UI
 2. Select recipe
 3. Click:
-   **Render Recipe**
+   Render Recipe
 
 Boom. Kitchen-ready.
 
@@ -224,8 +203,8 @@ Boom. Kitchen-ready.
 
 In Admin UI:
 
-* Select recipe → **Render Recipe**
-* Exit → **Back to Menu**
+* Select recipe → Render Recipe
+* Exit → Back to Menu
 
 ---
 
@@ -243,66 +222,6 @@ From here you can:
 
 ---
 
-## 📱 Mobile Control
-
-Blackcap Pi includes a lightweight, mobile-friendly control interface — no app install required.
-
-Access it at:
-
-http://<raspberry-pi-ip>:8080/mobile
-
----
-
-### ✨ Features
-
-* 📱 Touch-friendly interface for phones and tablets
-* 🔍 Search and filter recipes (including by type)
-* 🖼️ Preview the image of a recipe before rendering the recipe
-* 🍽️ One-tap **Render Recipe**
-* 🔄 **Back to Menu** (restores last menu image)
-* 🔗 Quick link back to full Admin UI
-
----
-
-### ⚙️ How It Works
-
-#### 🧭 Selecting a Recipe
-
-* Selecting a recipe **does NOT change display mode**
-* It only updates the preview (image + selection state)
-
-#### 🍽️ Rendering a Recipe
-
-* Tapping **Render Recipe**:
-
-  * Switches the system into **Recipe Mode**
-  * Sends the selected recipe to the display
-
-#### 🔄 Returning to Menu
-
-* **Back to Menu**:
-
-  * Only enabled after a recipe has been rendered
-  * Restores the **previous menu image**
-  * Returns the display to **Menu Mode**
-
----
-
-### 💡 Why This Design?
-
-* Prevents accidental screen changes
-* Keeps the display stable until intentional action
-* Matches real-world kitchen usage (decide → then display)
-* Makes mobile control feel fast and predictable
-
----
-
-### 🧪 Pro Tip
-
-Leave the recipe type filter blank to show **all recipes**, or narrow it down when you know what you’re looking for.
-
----
-
 ## 🧠 Parsing Strategy (Under the Hood)
 
 Blackcap Pi tries multiple approaches:
@@ -311,6 +230,18 @@ Blackcap Pi tries multiple approaches:
 2. Beautiful Soup scraping
 3. Playwright fallback (for JS-heavy sites)
 4. Image extraction + caching
+
+Basically: it tries really hard to make messy websites usable.
+
+---
+
+## 📱 Mobile Control (Next Up)
+
+Coming soon:
+
+* Tap-to-render recipes
+* Toggle modes
+* Minimal mobile UI (no app install needed)
 
 ---
 
@@ -324,6 +255,7 @@ Blackcap Pi tries multiple approaches:
 
 ## 🚧 Roadmap
 
+* 📱 Mobile UI
 * 🔐 Authentication
 * ☁️ Secure remote access
 * 🔄 Scheduled recipe rotation
