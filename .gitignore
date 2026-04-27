@@ -30,3 +30,6 @@ inky_env/
 # OS/editor
 .DS_Store
 .vscode/
+
+# local scripts
+sync_to_git.sh
