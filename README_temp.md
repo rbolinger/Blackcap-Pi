@@ -2,17 +2,9 @@
 
 A purpose-built Raspberry Pi + e-ink display system for beautifully simple, distraction-free content.
 
-**Blackcap Pi turns a simple weekly Google Sheet into a dynamic e-ink display with automatically generated visual icons based on your menu.**
-
 Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, readable format—perfect for kitchens, family hubs, or anywhere you want useful information without screens screaming for attention.
 
-Once configured, Blackcap Pi runs fully automated—no daily interaction required unless you want it for displaying that recipe for the next delicious meal you are going to make.
-
----
-
-## 🚀 What is this?
-
-Blackcap Pi turns a simple weekly Google Sheet into a dynamic e-ink display with automatically generated visual icons based on your menu. Plus it has recipe caching and display.
+Blackcap Pi turns a simple weekly Google Sheet into a dynamic e-ink display with automatically generated visual icons based on your menu.
 
 ---
 
@@ -44,8 +36,8 @@ Blackcap Pi turns a simple weekly Google Sheet into a dynamic e-ink display with
 
 ## ✨ Features
 
-* 🖥️ Optimized for Waveshare e-ink displays
-* 🧾 Always-on, low-power e-ink display (no glare, no distractions)
+🖥️ Optimized for Waveshare e-ink displays
+🧾 Always-on, low-power e-ink display (no glare, no distractions)
 * 📅 Automated **Menu Mode** from a published Google Sheet
 * 🍽️ Dedicated **Recipe Mode** (clean, readable layouts)
 * 🌐 Chrome extension for one-click recipe capture
@@ -154,8 +146,6 @@ The system avoids unnecessary refreshes:
 
 * No change → no update
 * Change detected → re-render + update
-
-👉 avoids unnecessary e-ink refreshes (which are slow + degrade panels)
 
 ---
 
@@ -352,6 +342,8 @@ From here you can:
 ## 📱 Mobile Control
 
 Blackcap Pi includes a lightweight, mobile-friendly control interface — no app install required.
+
+The mobile interface is the fastest way to control what’s shown on the display in real time. You need to make something in the recipe library, launch the mobile page and render it in just a few clicks.
 
 Access it at:
 
