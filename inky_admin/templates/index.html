@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inky Pi Admin</title>
+  <link rel="icon" href="{{ url_for('static', filename='inky_pie_squid.ico') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <style>
+    .mode-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 8px 0 18px;
+      flex-wrap: wrap;
+    }
+    .mode-toggle-label {
+      font-weight: 600;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 64px;
+      height: 34px;
+      margin: 0;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #bbb;
+      transition: .2s;
+      border-radius: 999px;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,.25);
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+      box-shadow: 0 1px 4px rgba(0,0,0,.35);
+    }
+    .switch input:checked + .slider {
+      background-color: #3b82f6;
+    }
+    .switch input:checked + .slider:before {
+      transform: translateX(30px);
+    }
+
+    .recipe-selected-card {
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 12px;
+      background: #fafafa;
+      margin: 8px 0 12px;
+      display: grid;
+      grid-template-columns: 132px 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+    .recipe-image-preview {
+      width: 132px;
+      height: 96px;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      background: #fff;
+    }
+    .recipe-image-placeholder {
+      width: 132px;
+      height: 96px;
+      border-radius: 10px;
+      border: 1px dashed #bbb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #777;
+      background: #fff;
+      font-size: .85rem;
+      text-align: center;
+      padding: 6px;
+    }
+    .recipe-selected-card h4 { margin: 0 0 4px; }
+    .recipe-meta { color: #555; font-size: .9rem; margin-top: 6px; }
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 1000;
+      padding: 24px;
+      overflow: auto;
+    }
+    .modal {
+      max-width: 980px;
+      margin: 30px auto;
+      background: #fff;
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .modal-header h2 { margin: 0; }
+    .recipe-search-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
+      gap: 8px;
+      align-items: end;
+    }
+    .recipe-results { margin-top: 14px; max-height: 360px; overflow: auto; }
+    .recipe-result {
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 8px;
+      display: grid;
+      grid-template-columns: 72px 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .recipe-result-thumb {
+      width: 72px;
+      height: 54px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      background: #fff;
+    }
+    .recipe-result-thumb-placeholder {
+      width: 72px;
+      height: 54px;
+      border-radius: 8px;
+      border: 1px dashed #bbb;
+      background: #fafafa;
+    }
+    .recipe-result h4 { margin: 0 0 4px; }
+    .recipe-add-form {
+      display: none;
+      border-top: 1px solid #ddd;
+      margin-top: 16px;
+      padding-top: 16px;
+    }
+    .button-secondary { background: #f3f4f6; color: #111827; }
+    @media (max-width: 850px) {
+      .recipe-search-grid { grid-template-columns: 1fr; }
+      .recipe-result { grid-template-columns: 1fr; }
+    }
+
+    .recipe-result > div:nth-child(2) {
+      min-width: 0;
+    }
+    .recipe-result h4 {
+      overflow-wrap: anywhere;
+      line-height: 1.15;
+    }
+    .recipe-result-actions {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      gap: 6px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .recipe-result-actions button {
+      white-space: normal;
+      min-width: 68px;
+      max-width: 92px;
+      padding: 6px 8px;
+      line-height: 1.1;
+      text-align: center;
+    }
+    .recipe-result-actions .refresh-cache-button {
+      min-width: 82px;
+    }
+    @media (max-width: 850px) {
+      .recipe-result {
+        grid-template-columns: 72px 1fr;
+      }
+      .recipe-result-actions {
+        grid-column: 1 / -1;
+        justify-content: stretch;
+      }
+      .recipe-result-actions button {
+        flex: 1 1 0;
+        max-width: none;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="header">
+      <h1>Inky Pi Admin</h1>
+      <img src="{{ url_for('static', filename='inky_pie_squid.png') }}" class="header-logo">
+    </div>
+    <p class="subtle">Config: {{ config_path }}</p>
+    {% if translations_path %}<p class="subtle mode-normal">Translations: {{ translations_path }}</p>{% endif %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% if missing %}
+      <div class="flash error">
+        <strong>Missing required settings for the current mode:</strong>
+        <ul>{% for item in missing %}<li>{{ item }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+
+    <div id="mode-banner" class="flash"></div>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Settings</h2>
+        <form action="{{ url_for('save_settings') }}" method="post">
+          <h3>Mode</h3>
+          <div class="mode-toggle-row">
+            <span class="mode-toggle-label">Normal Menu</span>
+            <label class="switch" title="Toggle between Normal Menu and Recipe Display mode">
+              <input id="display_mode_toggle" type="checkbox" {% if display_mode == 'recipe' %}checked{% endif %} onchange="onDisplayModeToggle()">
+              <span class="slider"></span>
+            </label>
+            <span class="mode-toggle-label">Recipe Display</span>
+            <input type="hidden" id="display_mode" name="display_mode" value="{{ display_mode }}">
+            <button type="button" id="restore-last-menu-button" class="button-secondary mode-normal" data-final-preview-exists="{{ 1 if final_preview_exists else 0 }}" onclick="restoreLastMenuImage()" {% if status.running or not final_preview_exists %}disabled{% endif %}>Restore Last Menu Image</button>
+            <span id="mode-save-status" class="subtle" aria-live="polite"></span>
+          </div>
+
+          <h3>Admin UI</h3>
+          <div class="two-col">
+            <label>Host<input type="text" name="host" value="{{ config['inky_admin'].get('host','') }}"></label>
+            <label>Port<input type="text" name="port" value="{{ config['inky_admin'].get('port','') }}"></label>
+          </div>
+
+          <h3>Display Size</h3>
+          <div class="two-col">
+            <label>Display Width<input type="text" name="display_width" value="{{ config['display'].get('display_width','') }}"></label>
+            <label>Display Height<input type="text" name="display_height" value="{{ config['display'].get('display_height','') }}"></label>
+          </div>
+
+          <div id="normal-mode-section" class="mode-normal">
+            <h3>Normal Mode Script</h3>
+            <div class="one-col">
+              <label>Normal Python Path<input type="text" name="normal_python_path" value="{{ config['normal_mode'].get('python_path', config['paths'].get('python_path','')) }}"></label>
+              <label>Normal Script Path<input type="text" name="normal_script_path" value="{{ config['normal_mode'].get('script_path', config['paths'].get('script_path','')) }}"></label>
+            </div>
+
+            <h3>Menu</h3>
+            <label>Menu URL<input type="url" name="menu_url" value="{{ config['menu'].get('url','') }}"></label>
+            <label>Page Wait Seconds<input type="text" name="page_wait_seconds" value="{{ config['menu'].get('page_wait_seconds','') }}"></label>
+
+            <h3>Noun Project</h3>
+            <div class="two-col">
+              <label>API Key<input type="text" name="api_key" value="{{ config['noun_project'].get('api_key','') }}"></label>
+              <label>Secret Key<input type="text" name="secret_key" value="{{ config['noun_project'].get('secret_key','') }}"></label>
+            </div>
+
+            <h3>Normal Display Layout</h3>
+            <div class="four-col">
+              <label>Footer Height<input type="text" name="footer_height" value="{{ config['display'].get('footer_height','') }}"></label>
+              <label>Body X Offset<input type="text" name="body_x_offset" value="{{ config['display'].get('body_x_offset','') }}"></label>
+              <label>Body Y Offset<input type="text" name="body_y_offset" value="{{ config['display'].get('body_y_offset','') }}"></label>
+              <label>Icon Y Offset<input type="text" name="icon_y_offset" value="{{ config['display'].get('icon_y_offset','') }}"></label>
+              <label>Text Y Offset<input type="text" name="text_y_offset" value="{{ config['display'].get('text_y_offset','') }}"></label>
+              <label>Crop Left<input type="text" name="crop_left" value="{{ config['display'].get('crop_left','') }}"></label>
+              <label>Crop Top<input type="text" name="crop_top" value="{{ config['display'].get('crop_top','') }}"></label>
+              <label>Crop Right<input type="text" name="crop_right" value="{{ config['display'].get('crop_right','') }}"></label>
+            </div>
+
+            <h3>Footer</h3>
+            <div class="four-col">
+              <label>Max Icons<input type="text" name="max_icons" value="{{ config['footer'].get('max_icons','') }}"></label>
+              <label>Icon Size<input type="text" name="icon_size" value="{{ config['footer'].get('icon_size','') }}"></label>
+              <label>Font Path<input type="text" name="font_path" value="{{ config['footer'].get('font_path','') }}"></label>
+              <label>Font Size<input type="text" name="font_size" value="{{ config['footer'].get('font_size','') }}"></label>
+            </div>
+
+            <h3>Processing</h3>
+            <div class="four-col">
+              <label>Contrast<input type="text" name="contrast" value="{{ config['processing'].get('contrast','') }}"></label>
+              <label>Sharpness<input type="text" name="sharpness" value="{{ config['processing'].get('sharpness','') }}"></label>
+              <label>Threshold<input type="text" name="threshold" value="{{ config['processing'].get('threshold','') }}"></label>
+              <label>OCR Scale<input type="text" name="ocr_scale" value="{{ config['processing'].get('ocr_scale','') }}"></label>
+              <label>OCR Threshold<input type="text" name="ocr_threshold" value="{{ config['processing'].get('ocr_threshold','') }}"></label>
+              <label>Diff Threshold<input type="text" name="diff_threshold" value="{{ config['processing'].get('diff_threshold','') }}"></label>
+            </div>
+
+            <h3>Normal Mode Paths</h3>
+            <div class="one-col">
+              <label>Lockfile<input type="text" name="lockfile" value="{{ config['paths'].get('lockfile','') }}"></label>
+              <label>Icon Cache Dir<input type="text" name="icon_cache_dir" value="{{ config['paths'].get('icon_cache_dir','') }}"></label>
+              <label>Translations CSV<input type="text" name="translations_csv" value="{{ config['paths'].get('translations_csv','') }}"></label>
+              <label>Current Snippet<input type="text" name="current_snippet" value="{{ config['paths'].get('current_snippet','') }}"></label>
+              <label>Last Snippet<input type="text" name="last_snippet" value="{{ config['paths'].get('last_snippet','') }}"></label>
+              <label>Temp Full<input type="text" name="temp_full" value="{{ config['paths'].get('temp_full','') }}"></label>
+              <label>Final Preview / Last Menu Image<input type="text" name="final_preview" value="{{ config['paths'].get('final_preview','') }}"></label>
+              <label>Recipe Preview<input type="text" name="recipe_preview" value="{{ config['paths'].get('recipe_preview','') }}"></label>
+              <label>Current Display Preview<input type="text" name="current_preview" value="{{ config['paths'].get('current_preview','') }}"></label>
+              <label>Current Recipe Image<input type="text" name="current_recipe_image" value="{{ config['paths'].get('current_recipe_image','') }}"></label>
+              <label>OCR Preview<input type="text" name="ocr_preview" value="{{ config['paths'].get('ocr_preview','') }}"></label>
+              <label>Menu Crop Preview<input type="text" name="menu_crop_preview" value="{{ config['paths'].get('menu_crop_preview','') }}"></label>
+            </div>
+          </div>
+
+          <div id="recipe-mode-section" class="mode-recipe">
+            <h3>Recipe Mode Script</h3>
+            <div class="one-col">
+              <label>Recipe Python Path<input type="text" name="recipe_python_path" value="{{ config['recipe_mode'].get('python_path','') }}"></label>
+              <label>Recipe Script Path<input type="text" name="recipe_script_path" value="{{ config['recipe_mode'].get('script_path','') }}"></label>
+            </div>
+
+            <h3>Recipe Repository</h3>
+            <div class="one-col">
+              <label>Recipe Repository JSON<input type="text" name="recipe_repo_path" value="{{ config['recipe_repository'].get('repo_path','') }}"></label>
+              <input type="hidden" id="selected_recipe_id" name="selected_recipe_id" value="{{ config['recipe_mode'].get('selected_recipe_id','') }}">
+
+              <div class="recipe-selected-card" id="selected-recipe-card">
+                <div id="selected-recipe-image-shell">
+                  {% if recipe_image_exists %}
+                    <img id="selected-recipe-image" class="recipe-image-preview" src="{{ selected_recipe_image_url }}" alt="Selected recipe image">
+                  {% else %}
+                    <div id="selected-recipe-image-placeholder" class="recipe-image-placeholder">No image yet</div>
+                    <img id="selected-recipe-image" class="recipe-image-preview" src="" alt="Selected recipe image" style="display:none;">
+                  {% endif %}
+                </div>
+                <div>
+                  {% if selected_recipe %}
+                    <h4 id="selected-recipe-name">{{ selected_recipe.name }}</h4>
+                    <div id="selected-recipe-description">{{ selected_recipe.description or 'No description saved.' }}</div>
+                    <div class="recipe-meta" id="selected-recipe-meta">{{ selected_recipe.recipe_type or 'Dinner' }} &middot; {{ selected_recipe.source }}{% if selected_recipe.file_type %} &middot; {{ selected_recipe.file_type }}{% endif %} &middot; {{ selected_recipe.layout.replace('_', ' ') }}</div>
+                  {% else %}
+                    <h4 id="selected-recipe-name">No recipe selected</h4>
+                    <div id="selected-recipe-description">Choose a saved recipe or add a new one.</div>
+                    <div class="recipe-meta" id="selected-recipe-meta"></div>
+                    <div class="recipe-meta" id="selected-recipe-image-meta"></div>
+                  {% endif %}
+                </div>
+              </div>
+
+              <button type="button" class="button-secondary" onclick="openRecipeModal()">Search / Select Recipe</button>
+            </div>
+            <p class="subtle">Recipe mode uses display width/height above. The recipe ID is saved in the config for backend use, but the UI displays the recipe name and description.</p>
+          </div>
+
+          <button type="submit">Save Settings</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Refresh & Preview</h2>
+        <div class="button-row mode-normal">
+          <form action="{{ url_for('run_refresh', mode='smart') }}" method="post">
+            <button id="smart-refresh-button" type="submit" {% if status.running %}disabled{% endif %}>Start Smart Refresh</button>
+          </form>
+          <form action="{{ url_for('run_refresh', mode='full') }}" method="post">
+            <button id="full-refresh-button" type="submit" {% if status.running %}disabled{% endif %}>Start Full Refresh</button>
+          </form>
+        </div>
+        <div class="button-row mode-recipe">
+          <form action="{{ url_for('run_refresh', mode='recipe') }}" method="post">
+            <button id="recipe-refresh-button" type="submit" {% if status.running %}disabled{% endif %}>Render Recipe</button>
+          </form>
+        </div>
+
+        <div class="status">
+          <p><strong>Running:</strong> <span id="status-running">{{ 'Yes' if status.running else 'No' }}</span></p>
+          <p><strong>Mode:</strong> <span id="status-mode">{{ status.mode }}</span></p>
+          <p><strong>Last started:</strong> <span id="status-started">{{ status.last_started }}</span></p>
+          <p><strong>Last finished:</strong> <span id="status-finished">{{ status.last_finished }}</span></p>
+          <p><strong>Return code:</strong> <span id="status-return">{{ status.last_return_code }}</span></p>
+        </div>
+
+        <label>Last output<textarea id="last-output" class="live-output" rows="14" readonly>{{ status.last_output }}</textarea></label>
+
+        <h3>Preview</h3>
+        <div class="preview-shell">
+          {% if preview_exists %}
+            <img id="preview-image" src="{{ url_for('preview_image') }}" alt="Current display preview">
+          {% else %}
+            <div id="preview-empty" class="preview-empty">No preview image yet.</div>
+            <img id="preview-image" src="" alt="Current display preview" style="display:none;">
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <section id="noun-rules-section" class="card mode-normal">
+      <h2>Noun Project Rules</h2>
+      <form action="{{ url_for('save_translations') }}" method="post">
+        <table class="rules-table">
+          <colgroup>
+            <col class="col-label"><col class="col-term"><col class="col-priority"><col class="col-patterns"><col class="col-actions">
+          </colgroup>
+          <thead><tr><th>Label</th><th>Term</th><th>Priority</th><th>Patterns</th><th></th></tr></thead>
+          <tbody>
+            {% for row in translations %}
+            <tr>
+              <td><input type="text" name="label" value="{{ row.label }}"></td>
+              <td><input type="text" name="term" value="{{ row.term }}"></td>
+              <td><input type="text" name="priority" value="{{ row.priority }}"></td>
+              <td><input type="text" name="patterns" value="{{ row.patterns }}"></td>
+              <td><button type="submit" formaction="{{ url_for('delete_translation') }}" formmethod="post" name="row_index" value="{{ loop.index0 }}" class="danger">Delete</button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <button type="submit">Save Rule Table</button>
+      </form>
+
+      <h3>Add Rule</h3>
+      <form action="{{ url_for('add_translation') }}" method="post">
+        <div class="rule-add-grid">
+          <label>Label<input type="text" name="new_label"></label>
+          <label>Term<input type="text" name="new_term"></label>
+          <label>Priority<input type="text" name="new_priority"></label>
+          <label>Patterns<input type="text" name="new_patterns"></label>
+        </div>
+        <button type="submit">Add Rule</button>
+      </form>
+    </section>
+  </div>
+
+
+  <div id="recipe-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="recipe-modal-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="recipe-modal-title">Recipe Library</h2>
+        <button type="button" class="button-secondary" onclick="closeRecipeModal()">Close</button>
+      </div>
+
+      <div class="recipe-search-grid">
+        <label>Search
+          <input type="text" id="recipe-search-text" placeholder="Name, description, URL, source..." oninput="filterRecipesDebounced()">
+        </label>
+        <label>Source
+          <select id="recipe-search-source" onchange="filterRecipes()">
+            <option value="">Any</option>
+            <option value="web">Web</option>
+            <option value="dropbox">Dropbox</option>
+            <option value="google_drive">Google Drive</option>
+          </select>
+        </label>
+        <label>File Type
+          <select id="recipe-search-file-type" onchange="filterRecipes()">
+            <option value="">Any</option>
+            <option value="html">HTML/Web</option>
+            <option value="pdf">PDF</option>
+            <option value="image">Image</option>
+            <option value="markdown">Markdown/Text</option>
+          </select>
+        </label>
+        <label>Layout
+          <select id="recipe-search-layout" onchange="filterRecipes()">
+            <option value="">Any</option>
+            <option value="single_page">Single Page</option>
+            <option value="two_page">Two Page</option>
+          </select>
+        </label>
+        <label>Recipe Type
+          <select id="recipe-search-type" onchange="filterRecipes()">
+            <option value="">Any</option>
+            <option value="Breakfast">Breakfast</option>
+            <option value="Lunch">Lunch</option>
+            <option value="Dinner">Dinner</option>
+            <option value="Side">Side</option>
+            <option value="Snack">Snack</option>
+            <option value="Dessert">Dessert</option>
+          </select>
+        </label>
+        <button type="button" onclick="filterRecipes()">Search</button>
+      </div>
+
+      <div class="button-row" style="margin-top: 12px;">
+        <button type="button" class="button-secondary" onclick="openAddRecipeForm()">Add New Recipe</button>
+        <span id="recipe-modal-status" class="subtle" aria-live="polite"></span>
+      </div>
+
+      <div id="recipe-results" class="recipe-results"></div>
+
+      <div id="recipe-add-form" class="recipe-add-form">
+        <h3 id="recipe-form-title">Add Recipe</h3>
+        <input type="hidden" id="edit-recipe-id" value="">
+        <div class="two-col">
+          <label>Name<input type="text" id="new-recipe-name"></label>
+          <label>File Type
+            <select id="new-recipe-file-type">
+              <option value="html">HTML/Web</option>
+              <option value="pdf">PDF</option>
+              <option value="image">Image</option>
+              <option value="markdown">Markdown/Text</option>
+            </select>
+          </label>
+        </div>
+        <label>Description<input type="text" id="new-recipe-description" placeholder="Short friendly description"></label>
+        <div class="two-col">
+          <label>Source
+            <select id="new-recipe-source">
+              <option value="web">Web</option>
+              <option value="dropbox">Dropbox</option>
+              <option value="google_drive">Google Drive</option>
+            </select>
+          </label>
+          <label>Layout
+            <select id="new-recipe-layout">
+              <option value="single_page">Single Page</option>
+              <option value="two_page" selected>Two Page</option>
+            </select>
+          </label>
+        </div>
+        <label>Recipe Type
+          <select id="new-recipe-type">
+            <option value="Breakfast">Breakfast</option>
+            <option value="Lunch">Lunch</option>
+            <option value="Dinner" selected>Dinner</option>
+            <option value="Side">Side</option>
+            <option value="Snack">Snack</option>
+            <option value="Dessert">Dessert</option>
+          </select>
+        </label>
+        <label>URL<input type="url" id="new-recipe-url" placeholder="Recipe page, Dropbox share link, or Google Drive share link"></label>
+        <div class="button-row">
+          <button type="button" onclick="addRecipe(true)">Save and Select</button>
+          <button type="button" class="button-secondary" onclick="addRecipe(false)">Save Only</button>
+          <button type="button" class="button-secondary" onclick="clearRecipeForm()">Clear</button>
+          <button type="button" class="button-secondary" onclick="closeRecipeForm()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    function getCurrentDisplayMode() {
+      const modeToggle = document.getElementById("display_mode_toggle");
+      return modeToggle && modeToggle.checked ? "recipe" : "normal";
+    }
+
+    function toggleModeSections() {
+      const modeInput = document.getElementById("display_mode");
+      const mode = getCurrentDisplayMode();
+      if (modeInput) modeInput.value = mode;
+      const normalItems = document.querySelectorAll(".mode-normal");
+      const recipeItems = document.querySelectorAll(".mode-recipe");
+      const banner = document.getElementById("mode-banner");
+
+      normalItems.forEach((el) => {
+        el.style.display = mode === "normal" ? "" : "none";
+      });
+      recipeItems.forEach((el) => {
+        el.style.display = mode === "recipe" ? "" : "none";
+      });
+
+      const restoreButton = document.getElementById("restore-last-menu-button");
+      if (restoreButton) {
+        const hasFinalPreview = restoreButton.dataset.finalPreviewExists === "1";
+        restoreButton.disabled = mode !== "normal" || !hasFinalPreview;
+      }
+
+      if (banner) {
+        if (mode === "recipe") {
+          banner.className = "flash warning";
+          banner.innerHTML = "<strong>Recipe Display Mode Active.</strong> Normal menu, Noun Project, footer, OCR, and smart-update settings are hidden. Scheduled normal updates should exit without changing the display.";
+        } else {
+          banner.className = "flash success";
+          banner.innerHTML = "<strong>Normal Menu Mode Active.</strong> Recipe-specific settings are hidden.";
+        }
+      }
+    }
+
+    async function saveDisplayModeOnly(mode) {
+      const status = document.getElementById("mode-save-status");
+      if (status) status.textContent = "Saving mode...";
+
+      const response = await fetch("{{ url_for('set_display_mode') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ display_mode: mode })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Could not save display mode.");
+      }
+
+      if (status) {
+        status.textContent = mode === "recipe" ? "Recipe mode saved." : "Normal mode saved.";
+        setTimeout(() => { status.textContent = ""; }, 2500);
+      }
+      return data;
+    }
+
+    async function onDisplayModeToggle() {
+      const modeToggle = document.getElementById("display_mode_toggle");
+      const previousMode = document.getElementById("display_mode").value || "normal";
+      const newMode = getCurrentDisplayMode();
+
+      toggleModeSections();
+
+      try {
+        await saveDisplayModeOnly(newMode);
+        refreshStatus();
+      } catch (err) {
+        console.error("Display mode save failed", err);
+        if (modeToggle) modeToggle.checked = previousMode === "recipe";
+        toggleModeSections();
+        const status = document.getElementById("mode-save-status");
+        if (status) status.textContent = "Mode save failed.";
+        alert(err.message || "Mode save failed.");
+      }
+    }
+
+    async function restoreLastMenuImage() {
+      const button = document.getElementById("restore-last-menu-button");
+      const status = document.getElementById("mode-save-status");
+      if (button) button.disabled = true;
+      if (status) status.textContent = "Restoring last menu image...";
+
+      try {
+        const response = await fetch("{{ url_for('restore_last_menu_image') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({})
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "Could not restore the last menu image.");
+        }
+        if (status) {
+          status.textContent = "Last menu image restored.";
+          setTimeout(() => { status.textContent = ""; }, 3000);
+        }
+        refreshStatus();
+      } catch (err) {
+        console.error("Restore last menu image failed", err);
+        if (status) status.textContent = "Restore failed.";
+        alert(err.message || "Restore failed.");
+      } finally {
+        if (button) {
+          button.dataset.finalPreviewExists = "1";
+          button.disabled = getCurrentDisplayMode() !== "normal";
+        }
+      }
+    }
+
+    let recipeSearchTimer = null;
+
+    function recipeMeta(recipe) {
+      const parts = [];
+      if (recipe.recipe_type) parts.push(recipe.recipe_type);
+      parts.push(recipe.source || "unknown");
+      if (recipe.file_type) parts.push(recipe.file_type);
+      if (recipe.layout) parts.push(recipe.layout.replaceAll("_", " "));
+      return parts.join(" - ");
+    }
+
+    function updateSelectedRecipeCard(recipe, imageUrl) {
+      document.getElementById("selected_recipe_id").value = recipe.id || "";
+      document.getElementById("selected-recipe-name").textContent = recipe.name || "No recipe selected";
+      document.getElementById("selected-recipe-description").textContent = recipe.description || "No description saved.";
+      document.getElementById("selected-recipe-meta").textContent = recipeMeta(recipe);
+      const imageMeta = document.getElementById("selected-recipe-image-meta");
+      if (imageMeta) {
+        imageMeta.textContent = recipe.recipe_image_written_at ? `Image cached: ${recipe.recipe_image_written_at}` : "Image not cached yet.";
+      }
+      const img = document.getElementById("selected-recipe-image");
+      const placeholder = document.getElementById("selected-recipe-image-placeholder");
+      const hasImage = Boolean(imageUrl);
+      if (img && hasImage) {
+        img.src = imageUrl + (imageUrl.includes("?") ? "&" : "?") + "ui=" + Date.now();
+        img.style.display = "block";
+        if (placeholder) placeholder.style.display = "none";
+      } else if (img) {
+        img.removeAttribute("src");
+        img.style.display = "none";
+        if (placeholder) placeholder.style.display = "flex";
+      }
+    }
+
+    function openRecipeModal() {
+      const modal = document.getElementById("recipe-modal-backdrop");
+      if (modal) modal.style.display = "block";
+      filterRecipes();
+    }
+
+    function closeRecipeModal() {
+      const modal = document.getElementById("recipe-modal-backdrop");
+      if (modal) modal.style.display = "none";
+      closeRecipeForm();
+    }
+
+    function toggleAddRecipeForm() {
+      const form = document.getElementById("recipe-add-form");
+      if (!form) return;
+      if (form.style.display === "block") {
+        closeRecipeForm();
+      } else {
+        clearRecipeForm();
+        form.style.display = "block";
+        const status = document.getElementById("recipe-modal-status");
+        if (status) status.textContent = "Adding new recipe.";
+      }
+    }
+
+    function openAddRecipeForm() {
+      clearRecipeForm();
+      const form = document.getElementById("recipe-add-form");
+      if (form) form.style.display = "block";
+      const status = document.getElementById("recipe-modal-status");
+      if (status) status.textContent = "Adding new recipe.";
+    }
+
+    function closeRecipeForm() {
+      const form = document.getElementById("recipe-add-form");
+      if (form) form.style.display = "none";
+      clearRecipeForm();
+      const status = document.getElementById("recipe-modal-status");
+      if (status) status.textContent = "";
+    }
+
+    function filterRecipesDebounced() {
+      clearTimeout(recipeSearchTimer);
+      recipeSearchTimer = setTimeout(filterRecipes, 250);
+    }
+
+    async function filterRecipes() {
+      const status = document.getElementById("recipe-modal-status");
+      const results = document.getElementById("recipe-results");
+      if (status) status.textContent = "Searching...";
+      const params = new URLSearchParams({
+        q: document.getElementById("recipe-search-text")?.value || "",
+        source: document.getElementById("recipe-search-source")?.value || "",
+        file_type: document.getElementById("recipe-search-file-type")?.value || "",
+        layout: document.getElementById("recipe-search-layout")?.value || "",
+        recipe_type: document.getElementById("recipe-search-type")?.value || ""
+      });
+      try {
+        const response = await fetch(`{{ url_for('recipes_api') }}?${params.toString()}`, { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "Recipe search failed.");
+        renderRecipeResults(data.recipes || []);
+        if (status) status.textContent = `${(data.recipes || []).length} recipe(s) found.`;
+      } catch (err) {
+        if (results) results.innerHTML = `<div class="flash error">${err.message}</div>`;
+        if (status) status.textContent = "Search failed.";
+      }
+    }
+
+    function renderRecipeResults(recipes) {
+      const results = document.getElementById("recipe-results");
+      if (!results) return;
+      if (!recipes.length) {
+        results.innerHTML = '<div class="subtle">No recipes found. Add a new recipe below.</div>';
+        return;
+      }
+      results.innerHTML = recipes.map((recipe) => {
+        const thumb = recipe.recipe_image_url
+          ? `<img class="recipe-result-thumb" src="${escapeHtml(recipe.recipe_image_url)}" alt="">`
+          : `<div class="recipe-result-thumb-placeholder"></div>`;
+        return `
+          <div class="recipe-result">
+            ${thumb}
+            <div>
+              <h4>${escapeHtml(recipe.name || '')}</h4>
+              <div>${escapeHtml(recipe.description || 'No description saved.')}</div>
+              <div class="recipe-meta">${escapeHtml(recipeMeta(recipe))}</div>
+            </div>
+            <div class="recipe-result-actions">
+              <button type="button" onclick="selectRecipe('${escapeJs(recipe.id)}')">Select</button>
+              <button type="button" class="button-secondary" onclick="editRecipe('${escapeJs(recipe.id)}')">Edit</button>
+              <button type="button" class="button-secondary refresh-cache-button" onclick="refreshRecipeCache('${escapeJs(recipe.id)}')">Refresh<br>Cache</button>
+              <button type="button" class="danger" onclick="deleteRecipe('${escapeJs(recipe.id)}', '${escapeJs(recipe.name || '')}')">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function selectRecipe(recipeId) {
+      const status = document.getElementById("recipe-modal-status");
+      if (status) status.textContent = "Selecting recipe...";
+      const response = await fetch("{{ url_for('select_recipe') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ recipe_id: recipeId })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        alert(data.error || "Could not select recipe.");
+        if (status) status.textContent = "Select failed.";
+        return;
+      }
+      updateSelectedRecipeCard(data.recipe, data.recipe_image_url);
+      if (status) status.textContent = "Recipe selected.";
+      closeRecipeModal();
+    }
+
+    async function addRecipe(selectAfterAdd) {
+      const status = document.getElementById("recipe-modal-status");
+      const payload = {
+        recipe_id: document.getElementById("edit-recipe-id")?.value || "",
+        name: document.getElementById("new-recipe-name")?.value || "",
+        description: document.getElementById("new-recipe-description")?.value || "",
+        source: document.getElementById("new-recipe-source")?.value || "web",
+        file_type: document.getElementById("new-recipe-file-type")?.value || "html",
+        layout: document.getElementById("new-recipe-layout")?.value || "two_page",
+        recipe_type: document.getElementById("new-recipe-type")?.value || "Dinner",
+        url: document.getElementById("new-recipe-url")?.value || "",
+        select_after_add: selectAfterAdd
+      };
+      if (status) status.textContent = "Saving recipe and building cache...";
+      const response = await fetch("{{ url_for('add_recipe') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        alert(data.error || "Could not save recipe.");
+        if (status) status.textContent = "Save failed.";
+        return;
+      }
+      if (selectAfterAdd) {
+        updateSelectedRecipeCard(data.recipe, data.recipe_image_url);
+        closeRecipeModal();
+      }
+      closeRecipeForm();
+      if (status) {
+        if (data.cache_ok) {
+          status.textContent = selectAfterAdd ? "Recipe saved, cached, and selected." : "Recipe saved and cached.";
+        } else {
+          status.textContent = "Recipe saved, but cache was not created.";
+        }
+      }
+      if (!data.cache_ok && data.cache_message) {
+        alert(data.cache_message);
+      }
+      filterRecipes();
+    }
+
+    function clearRecipeForm() {
+      const idEl = document.getElementById("edit-recipe-id");
+      if (idEl) idEl.value = "";
+      const title = document.getElementById("recipe-form-title");
+      if (title) title.textContent = "Add Recipe";
+      ["new-recipe-name", "new-recipe-description", "new-recipe-url"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      });
+      const typeEl = document.getElementById("new-recipe-type");
+      if (typeEl) typeEl.value = "Dinner";
+      const fileTypeEl = document.getElementById("new-recipe-file-type");
+      if (fileTypeEl) fileTypeEl.value = "html";
+      const sourceEl = document.getElementById("new-recipe-source");
+      if (sourceEl) sourceEl.value = "web";
+      const layoutEl = document.getElementById("new-recipe-layout");
+      if (layoutEl) layoutEl.value = "two_page";
+    }
+
+    async function editRecipe(recipeId) {
+      const status = document.getElementById("recipe-modal-status");
+      if (status) status.textContent = "Loading recipe for edit...";
+      const response = await fetch(`/get-recipe/${encodeURIComponent(recipeId)}`, { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        alert(data.error || "Could not load recipe.");
+        if (status) status.textContent = "Edit load failed.";
+        return;
+      }
+      const recipe = data.recipe || {};
+      document.getElementById("edit-recipe-id").value = recipe.id || "";
+      document.getElementById("new-recipe-name").value = recipe.name || "";
+      document.getElementById("new-recipe-description").value = recipe.description || "";
+      document.getElementById("new-recipe-url").value = recipe.url || "";
+      document.getElementById("new-recipe-source").value = recipe.source || "web";
+      document.getElementById("new-recipe-file-type").value = recipe.file_type || "html";
+      document.getElementById("new-recipe-layout").value = recipe.layout || "two_page";
+      document.getElementById("new-recipe-type").value = recipe.recipe_type || "Dinner";
+      const title = document.getElementById("recipe-form-title");
+      if (title) title.textContent = `Edit Recipe: ${recipe.name || recipe.id}`;
+      const form = document.getElementById("recipe-add-form");
+      if (form) form.style.display = "block";
+      if (status) status.textContent = "Editing recipe.";
+    }
+
+    async function refreshRecipeCache(recipeId) {
+      const status = document.getElementById("recipe-modal-status");
+      if (status) status.textContent = "Refreshing cache...";
+      const response = await fetch(`/refresh-recipe/${encodeURIComponent(recipeId)}`, { method: "POST", cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        alert(data.message || data.error || "Could not refresh cache.");
+        if (status) status.textContent = "Refresh failed.";
+        return;
+      }
+      if (data.recipe && document.getElementById("selected_recipe_id").value === recipeId) {
+        updateSelectedRecipeCard(data.recipe, data.recipe_image_url);
+      }
+      if (status) status.textContent = "Recipe cache refreshed.";
+      filterRecipes();
+    }
+
+    async function deleteRecipe(recipeId, recipeName) {
+      if (!confirm(`Delete recipe "${recipeName || recipeId}"? This removes the library entry but does not delete cached files.`)) return;
+      const status = document.getElementById("recipe-modal-status");
+      if (status) status.textContent = "Deleting recipe...";
+      const response = await fetch(`/delete-recipe/${encodeURIComponent(recipeId)}`, { method: "POST", cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        alert(data.error || "Could not delete recipe.");
+        if (status) status.textContent = "Delete failed.";
+        return;
+      }
+      if (document.getElementById("selected_recipe_id").value === recipeId) {
+        updateSelectedRecipeCard({id: "", name: "No recipe selected", description: "Choose a saved recipe or add a new one.", source: "", layout: ""}, "");
+      }
+      if (status) status.textContent = "Recipe deleted.";
+      filterRecipes();
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[c]));
+    }
+
+    function escapeJs(value) {
+      return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    }
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch("{{ url_for('status') }}", { cache: "no-store" });
+        const data = await response.json();
+        document.getElementById("status-running").textContent = data.running ? "Yes" : "No";
+        document.getElementById("status-mode").textContent = data.mode || "";
+        document.getElementById("status-started").textContent = data.last_started;
+        document.getElementById("status-finished").textContent = data.last_finished;
+        document.getElementById("status-return").textContent = data.last_return_code;
+        const output = document.getElementById("last-output");
+        const stick = output.scrollTop + output.clientHeight >= output.scrollHeight - 20;
+        output.value = data.last_output || "";
+        if (stick) output.scrollTop = output.scrollHeight;
+        const smartButton = document.getElementById("smart-refresh-button");
+        const fullButton = document.getElementById("full-refresh-button");
+        const recipeButton = document.getElementById("recipe-refresh-button");
+        if (smartButton) smartButton.disabled = data.running;
+        if (fullButton) fullButton.disabled = data.running;
+        if (recipeButton) recipeButton.disabled = data.running;
+        const restoreButton = document.getElementById("restore-last-menu-button");
+        if (restoreButton) {
+          restoreButton.dataset.finalPreviewExists = data.final_preview_exists ? "1" : "0";
+          restoreButton.disabled = data.running || getCurrentDisplayMode() !== "normal" || !data.final_preview_exists;
+        }
+        const img = document.getElementById("preview-image");
+        const empty = document.getElementById("preview-empty");
+        if (data.preview_url) {
+          img.src = data.preview_url;
+          img.style.display = "block";
+          if (empty) empty.style.display = "none";
+        }
+        const recipeImg = document.getElementById("selected-recipe-image");
+        const recipePlaceholder = document.getElementById("selected-recipe-image-placeholder");
+        // Do not update the selected recipe image from status polling; it is recipe-specific and
+        // should only change when a recipe is selected or added.
+      } catch (err) {
+        console.error("Status poll failed", err);
+      }
+    }
+
+    toggleModeSections();
+    refreshStatus();
+    setInterval(refreshStatus, 1500);
+  </script>
+</body>
+</html>

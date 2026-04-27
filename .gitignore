@@ -1,0 +1,32 @@
+# secrets / live config
+inky_menu_config.ini
+*.secret
+*.env
+
+# runtime/cache/output
+recipe_cache/
+noun_cache/
+*.lock
+*.log
+*.pid
+
+# generated previews
+current_view.png
+recipe_preview.png
+final_preview.png
+ocr_preview.png
+menu_crop_preview.png
+current_recipe_image.png
+current_snippet.png
+last_snippet.png
+temp_full.png
+
+# python
+__pycache__/
+*.pyc
+.venv/
+inky_env/
+
+# OS/editor
+.DS_Store
+.vscode/

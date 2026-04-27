@@ -1,0 +1,71 @@
+[inky_admin]
+host = 0.0.0.0
+port = 8080
+
+[general]
+display_mode = recipe
+display_width = 960
+display_height = 680
+
+[normal_mode]
+python_path = /home/pi/inky_env/bin/python3
+script_path = /home/pi/inky_menu.py
+
+[recipe_mode]
+python_path = /home/pi/inky_env/bin/python3
+script_path = /home/pi/render_recipe_mode.py
+selected_recipe_id = chicken_shawarma_tacos
+
+[menu]
+url = [Change Me - Google Sheet Menu URL]
+page_wait_seconds = 20
+
+[noun_project]
+api_key = [Change Me - Key]
+secret_key = [Change Me - Secret]
+
+[display]
+display_width = 960
+display_height = 680
+footer_height = 90
+body_x_offset = 0
+body_y_offset = 0
+icon_y_offset = -2
+text_y_offset = -14
+crop_left = 0
+crop_top = 35
+crop_right = 960
+
+[paths]
+lockfile = /tmp/inky_menu_display.lock
+icon_cache_dir = /home/pi/noun_cache
+translations_csv = /home/pi/noun_cache/NounProjectWords.csv
+current_snippet = /home/pi/current_snippet.png
+last_snippet = /home/pi/last_snippet.png
+temp_full = /home/pi/temp_full.png
+final_preview = /home/pi/final_render_preview.png
+ocr_preview = /home/pi/ocr_preview.png
+menu_crop_preview = /home/pi/menu_crop_preview.png
+python_path = /home/pi/inky_env/bin/python3
+script_path = /home/pi/inky_menu.py
+current_preview = /home/pi/current_view.png
+recipe_preview = /home/pi/recipe_preview.png
+current_recipe_image = /home/pi/recipe_cache/current_recipe_image.png
+
+[footer]
+max_icons = 8
+icon_size = 40
+font_path = /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+font_size = 18
+
+[processing]
+contrast = 2.8
+sharpness = 2.0
+threshold = 210
+ocr_scale = 2
+ocr_threshold = 185
+diff_threshold = 0.1
+
+[recipe_repository]
+repo_path = /home/pi/inky_recipe_repo.json
+
