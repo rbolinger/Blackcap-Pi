@@ -42,7 +42,7 @@ Blackcap-Pi/
 │   └── inky_admin_app.py       #   └── Flask server
 ├── inky_menu.py                # 📅 Menu rendering logic
 ├── render_recipe_mode.py       # 🍽️ Recipe display renderer
-├── config.ini                  # ⚙️ Configuration
+├── inky_menu_config.ini        # ⚙️ Configuration
 ├── inky_env/                   # 🐍 Python virtual environment (local)
 └── README.md                   # 📖 Project documentation
 ```
