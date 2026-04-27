@@ -33,3 +33,6 @@ inky_env/
 
 # local scripts
 sync_to_git.sh
+
+# old files
+*_old.*
