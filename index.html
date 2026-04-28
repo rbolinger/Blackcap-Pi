@@ -81,6 +81,59 @@
       color: #6b7280;
       font-size: 0.95rem;
     }
+
+    .hero-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+    }
+
+    .hero-logo {
+      width: 180px;
+      height: auto;
+      flex-shrink: 0;
+      margin-left: 20px;
+      filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.15));
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 24px 12px;
+      }
+
+      .hero {
+        padding: 28px 24px;
+      }
+
+      .hero-header {
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .hero-header h1 {
+        font-size: 2.6rem;
+        line-height: 1.15;
+        max-width: 65%;
+      }
+
+      .hero-logo {
+        width: 120px;
+        margin-left: 0;
+        margin-right: -6px;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .hero-header h1 {
+        font-size: 2.35rem;
+        max-width: 60%;
+      }
+
+      .hero-logo {
+        width: 105px;
+      }
+    }
   </style>
 
 </head>
@@ -95,47 +148,33 @@
         class="hero-logo">
     </div>
 
-    <p class="tagline">
-      A Raspberry Pi + e-ink kitchen display for weekly menus, recipe mode, and smart icon footers.
-    </p>
+```
+<p class="tagline">
+  A Raspberry Pi + e-ink kitchen display for weekly menus, recipe mode, and smart icon footers.
+</p>
 
-    <p>
-      <strong>Blackcap Pi</strong> turns a simple published Google Sheet into a calm, always-on menu display with
-      automatically generated visual icons based on your weekly menu.
-    </p>
+<p>
+  <strong>Blackcap Pi</strong> turns a simple published Google Sheet into a calm, always-on menu display with
+  automatically generated visual icons based on your weekly menu.
+</p>
 
-    <p>
-      The name comes from the <strong>Blackcap</strong> (<em>Rubus occidentalis</em>), a type of black raspberry that
-      tastes like a traditional raspberry but has a deep, dark color—fitting for a project built around the
-      black-and-white simplicity and efficiency of an e-ink display. Also, “Inky Pi” was already taken.
-    </p>
+<p>
+  The name comes from the <strong>Blackcap</strong> (<em>Rubus occidentalis</em>), a type of black raspberry that
+  tastes like a traditional raspberry but has a deep, dark color—fitting for a project built around the
+  black-and-white simplicity and efficiency of an e-ink display. Also, “Inky Pi” was already taken.
+</p>
 
-    <p style="font-size: 0.95rem; color: #6b7280;">
-      Curious about the fruit? Learn more about
-      <a href="https://en.wikipedia.org/wiki/Rubus_occidentalis" target="_blank" rel="noopener noreferrer">
-        <em>Rubus occidentalis</em>
-      </a>.
-    </p>
+<p style="font-size: 0.95rem; color: #6b7280;">
+  Curious about the fruit? Learn more about
+  <a href="https://en.wikipedia.org/wiki/Rubus_occidentalis" target="_blank" rel="noopener noreferrer">
+    <em>Rubus occidentalis</em>
+  </a>.
+</p>
 
-    <a class="button" href="https://github.com/rbolinger/Blackcap-Pi">View on GitHub</a>
+<a class="button" href="https://github.com/rbolinger/Blackcap-Pi">View on GitHub</a>
+```
 
   </section>
-
-  <style>
-    .hero-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 20px;
-    }
-
-    .hero-logo {
-      width: 180px;
-      height: auto;
-      margin-left: 20px;
-      filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.15));
-    }
-  </style>
 
   <h2>📅 Menu Mode with Smart Icons</h2>
   <img
