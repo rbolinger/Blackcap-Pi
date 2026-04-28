@@ -20,25 +20,25 @@ Blackcap Pi turns a simple weekly Google Sheet into a dynamic e-ink display with
 
 ### 📅 Menu Mode with Smart Icons
 
-![Menu with Icons](docs/images/menu-with-icons.png)
+![Menu with Icons](https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/menu-with-icons.png)
 
 *Automatically generated icons based on weekly menu content*
 
 ### 🌐 Chrome Extension (Send Recipe)
 
-![Chrome Extension](docs/images/extension.png)
+![Chrome Extension](https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/extension.png)
 
 ### 🛠 Admin UI
 
-![Admin UI](docs/images/admin-ui.png)
+![Admin UI](https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/admin-ui.png)
 
 ### 📚 Recipe Library
 
-![Recipe Library](docs/images/recipe-library.png)
+![Recipe Library](https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/recipe-library.png)
 
 ### 📱 Mobile Control
 
-![Mobile UI](docs/images/mobile-ui.png)
+![Mobile UI](https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/mobile-ui.png)
 
 ---
 
