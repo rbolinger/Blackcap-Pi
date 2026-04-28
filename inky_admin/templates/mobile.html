@@ -202,7 +202,8 @@
       <div class="button-grid">
         <button id="renderButton" class="primary" type="button">🍳 Render Recipe</button>
         <button id="normalButton" class="normal" type="button" {% if display_mode != 'recipe' %}disabled{% endif %}>📅 Back to Menu</button>
-        <a class="admin-link wide" href="{{ url_for('index') }}">🛠️ Full Admin UI</a>
+        <a class="admin-link" href="{{ url_for('mobile_add_recipe_page') }}">➕ Add Recipe</a>
+        <a class="admin-link" href="{{ url_for('index') }}">🛠️ Full Admin UI</a>
       </div>
       <div id="toast" class="toast"></div>
     </section>

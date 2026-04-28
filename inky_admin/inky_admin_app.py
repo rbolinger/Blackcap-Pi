@@ -14,6 +14,15 @@ from typing import Dict, List
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for, flash
 
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from capture_recipe import CaptureRecipeError, remove_capture_assets, save_capture_images
+
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = Path(os.environ.get("INKY_CONFIG_PATH", str(Path.home() / "inky_menu_config.ini")))
 
@@ -75,6 +84,7 @@ def load_config() -> configparser.ConfigParser:
     config["recipe_mode"].setdefault("script_path", "/home/pi/render_recipe_mode.py")
     config["recipe_mode"].setdefault("selected_recipe_id", "")
     config["recipe_repository"].setdefault("repo_path", "/home/pi/inky_recipe_repo.json")
+    config["recipe_repository"].setdefault("cache_dir", "/home/pi/recipe_cache")
 
     # Optional token for Chrome extension / API integrations. Leave blank to allow LAN-only
     # unauthenticated access, or set [api] extension_token and send:
@@ -120,6 +130,15 @@ def recipe_repo_path(config: configparser.ConfigParser) -> Path:
     path = Path(os.path.expanduser(raw))
     if not path.is_absolute():
         path = (BASE_DIR / path).resolve()
+    return path
+
+
+def recipe_cache_dir(config: configparser.ConfigParser) -> Path:
+    raw = cfg(config, "recipe_repository", "cache_dir").strip() or "/home/pi/recipe_cache"
+    path = Path(os.path.expanduser(raw))
+    if not path.is_absolute():
+        path = (BASE_DIR / path).resolve()
+    path.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -196,7 +215,7 @@ def add_or_update_recipe_from_payload(config: configparser.ConfigParser, payload
         "file_type": payload.get("file_type", "html"),
         "recipe_type": payload.get("recipe_type", "Dinner"),
     })
-    if not recipe["url"]:
+    if recipe["source"] != "capture" and not recipe["url"]:
         raise ValueError("Recipe URL is required.")
 
     if updating:
@@ -206,6 +225,11 @@ def add_or_update_recipe_from_payload(config: configparser.ConfigParser, payload
                 preserved = dict(item)
                 preserved.update(recipe)
                 preserved["id"] = requested_id
+                for extra_key in ["capture_dir", "source_image_paths", "ocr_text_path", "recipe_model_path"]:
+                    if extra_key in item and extra_key not in recipe:
+                        preserved[extra_key] = item.get(extra_key)
+                    if extra_key in payload:
+                        preserved[extra_key] = payload.get(extra_key)
                 raw_recipes[idx] = preserved
                 recipe = normalize_recipe_record(preserved)
                 found = True
@@ -272,6 +296,10 @@ def normalize_recipe_record(recipe: dict) -> dict:
         "dish_image_path": str(recipe.get("dish_image_path") or recipe.get("recipe_image_path") or recipe.get("cached_image_path") or "").strip(),
         "recipe_image_written_at": str(recipe.get("recipe_image_written_at") or "").strip(),
         "recipe_image_source_url": str(recipe.get("recipe_image_source_url") or "").strip(),
+        "capture_dir": str(recipe.get("capture_dir") or "").strip(),
+        "source_image_paths": recipe.get("source_image_paths") or [],
+        "ocr_text_path": str(recipe.get("ocr_text_path") or "").strip(),
+        "recipe_model_path": str(recipe.get("recipe_model_path") or "").strip(),
     }
 
 
@@ -499,6 +527,47 @@ def collect_missing_required(config: configparser.ConfigParser) -> List[str]:
         if cfg(config, section, key).strip() == "":
             missing.append(f"[{section}] {key}")
     return missing
+
+
+def create_capture_recipe_from_upload(config: configparser.ConfigParser, form, files) -> tuple[dict, bool, str]:
+    name = str(form.get("name", "")).strip()
+    if not name:
+        raise ValueError("Recipe name is required.")
+
+    repo = load_recipe_repo(config)
+    raw_recipes = [r for r in repo.get("recipes", []) if isinstance(r, dict)]
+    existing_for_ids = [normalize_recipe_record(r) for r in raw_recipes]
+    recipe_id = make_unique_recipe_id(existing_for_ids, name)
+
+    manifest = save_capture_images(files, recipe_cache_dir(config), recipe_id)
+    capture_dir = str(manifest.get("capture_dir", ""))
+    source_images = manifest.get("source_image_paths", [])
+
+    recipe = normalize_recipe_record({
+        "id": recipe_id,
+        "name": name,
+        "description": form.get("description", ""),
+        "source": "capture",
+        "url": "",
+        "layout": form.get("layout", "two_page"),
+        "file_type": "capture",
+        "recipe_type": form.get("recipe_type", "Dinner"),
+        "capture_dir": capture_dir,
+        "source_image_paths": source_images,
+        "ocr_text_path": str(Path(capture_dir) / "ocr_text.txt"),
+        "recipe_model_path": str(Path(capture_dir) / "recipe_model.json"),
+    })
+    raw_recipes.append(recipe)
+    repo["recipes"] = raw_recipes
+    save_recipe_repo(config, repo)
+
+    cache_ok, cache_message = start_recipe_cache_build(config, recipe_id)
+    repo_after_cache = load_recipe_repo(config)
+    saved_recipe = next(
+        (normalize_recipe_record(r) for r in repo_after_cache.get("recipes", []) if isinstance(r, dict) and str(r.get("id", "")) == recipe_id),
+        recipe,
+    )
+    return saved_recipe, cache_ok, cache_message
 
 
 @app.after_request
@@ -813,6 +882,8 @@ def delete_recipe_api(recipe_id: str):
     recipe = next((r for r in recipes if str(r.get("id", "")).strip() == recipe_id), None)
     if not recipe:
         return jsonify({"ok": False, "error": "Recipe not found."}), 404
+    if str(recipe.get("source", "")).strip().lower() == "capture":
+        remove_capture_assets(recipe)
     repo["recipes"] = [r for r in recipes if str(r.get("id", "")).strip() != recipe_id]
     save_recipe_repo(config, repo)
     if cfg(config, "recipe_mode", "selected_recipe_id").strip() == recipe_id:
@@ -827,6 +898,8 @@ def refresh_recipe_api(recipe_id: str):
     recipe = next((r for r in list_recipes(config) if r["id"] == recipe_id), None)
     if not recipe:
         return jsonify({"ok": False, "error": "Recipe not found."}), 404
+    if str(recipe.get("source", "")).strip().lower() == "capture":
+        return jsonify({"ok": False, "error": "Capture recipes are created from uploaded photos and cannot refresh from a web source."}), 400
     cache_ok, cache_message = build_recipe_cache(config, recipe_id)
     repo_after_cache = load_recipe_repo(config)
     saved_recipe = next(
@@ -1144,6 +1217,60 @@ def _start_refresh_if_idle(mode: str) -> tuple[bool, str]:
     thread = threading.Thread(target=run_refresh_thread, args=(mode,), daemon=True)
     thread.start()
     return True, f"{mode.title()} refresh started."
+
+
+@app.route("/mobile/add-recipe", methods=["GET"])
+def mobile_add_recipe_page():
+    config = load_config()
+    recipes = list_recipes(config)
+    recipe_types = sorted({
+        str(recipe.get("recipe_type", "")).strip()
+        for recipe in recipes
+        if str(recipe.get("recipe_type", "")).strip()
+    }, key=lambda value: value.lower())
+    if not recipe_types:
+        recipe_types = ["Breakfast", "Lunch", "Dinner", "Side", "Snack", "Dessert"]
+    return render_template("mobile_add_recipe.html", recipe_types=recipe_types)
+
+
+@app.route("/mobile/add-recipe", methods=["POST"])
+def mobile_add_recipe_submit():
+    config = load_config()
+    add_method = str(request.form.get("add_method", "url")).strip().lower()
+    try:
+        if add_method == "capture":
+            saved_recipe, cache_ok, cache_message = create_capture_recipe_from_upload(
+                config,
+                request.form,
+                request.files.getlist("photos"),
+            )
+        else:
+            payload = {
+                "name": request.form.get("name", ""),
+                "description": request.form.get("description", ""),
+                "source": "web",
+                "file_type": "html",
+                "layout": request.form.get("layout", "two_page"),
+                "recipe_type": request.form.get("recipe_type", "Dinner"),
+                "url": request.form.get("url", ""),
+                "refresh_cache": True,
+                "cache_async": True,
+                "select_after_add": False,
+            }
+            saved_recipe, _, _ = add_or_update_recipe_from_payload(config=config, payload=payload, build_cache=False)
+            cache_ok, cache_message = start_recipe_cache_build(config, saved_recipe["id"])
+    except (CaptureRecipeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not add recipe: {exc}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "recipe": saved_recipe,
+        "cache_queued": bool(cache_ok),
+        "cache_message": cache_message,
+        "recipe_image_url": recipe_image_url_for_record(saved_recipe),
+    })
 
 
 @app.route("/mobile", methods=["GET"])

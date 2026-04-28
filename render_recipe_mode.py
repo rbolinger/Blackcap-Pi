@@ -29,6 +29,8 @@ try:
 except Exception:
     sync_playwright = None
 
+from capture_recipe import CaptureRecipeError, build_capture_recipe_model
+
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = Path(os.environ.get("INKY_CONFIG_PATH", str(Path.home() / "inky_menu_config.ini")))
 CACHE_CHECK_DAYS = 30
@@ -172,6 +174,7 @@ def normalize_source(value: str) -> str:
         "website": "web", "web_recipe_url": "web", "url": "web",
         "shared_file_url": "file", "google drive": "google_drive",
         "gdrive": "google_drive", "drive": "google_drive",
+        "photo": "capture", "photos": "capture", "scan": "capture", "scanned": "capture",
     }
     return aliases.get(value, value or "web")
 
@@ -963,6 +966,12 @@ def render_fresh_recipe(recipe: dict[str, Any], runtime: dict[str, Any], source:
         if recipe_model.get("image_url"):
             cache_recipe_image_from_url(str(recipe_model.get("image_url")), recipe, runtime, repo, recipe_id, url)
         return render_recipe_text(recipe_model, runtime, layout)
+    if source == "capture":
+        try:
+            recipe_model = build_capture_recipe_model(recipe, runtime)
+        except CaptureRecipeError as exc:
+            raise RecipeModeError(str(exc)) from exc
+        return render_recipe_text(recipe_model, runtime, layout)
     if source in {"dropbox", "google_drive", "file", "image", "pdf"}:
         return render_shared_file(recipe, runtime, repo=repo, recipe_id=recipe_id)
     if url.startswith("http"):
@@ -988,13 +997,14 @@ def render_selected_recipe(runtime: dict[str, Any], refresh_cache: bool = False,
     source = normalize_source(str(recipe.get("source", "web")))
     url = str(recipe.get("url", "")).strip()
     layout = normalize_layout(str(recipe.get("layout", "two_page")))
-    if not url:
+    if source != "capture" and not url:
         raise RecipeModeError(f"Recipe '{name}' does not have a URL.")
     print("Recipe mode active.")
     print(f"Selected recipe: {name}")
     print(f"Source: {source}")
     print(f"Layout: {layout}")
-    print(f"URL: {url}")
+    if url:
+        print(f"URL: {url}")
     reason = cache_refresh_reason(recipe, source, url, layout, refresh_cache)
     cached_pdf = get_cached_pdf_path(recipe)
     if reason is None and cached_pdf is not None:

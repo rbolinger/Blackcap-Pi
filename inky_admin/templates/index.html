@@ -457,6 +457,7 @@
             <option value="web">Web</option>
             <option value="dropbox">Dropbox</option>
             <option value="google_drive">Google Drive</option>
+            <option value="capture">Capture</option>
           </select>
         </label>
         <label>File Type
@@ -507,6 +508,7 @@
               <option value="pdf">PDF</option>
               <option value="image">Image</option>
               <option value="markdown">Markdown/Text</option>
+              <option value="capture">Capture</option>
             </select>
           </label>
         </div>
@@ -517,6 +519,7 @@
               <option value="web">Web</option>
               <option value="dropbox">Dropbox</option>
               <option value="google_drive">Google Drive</option>
+              <option value="capture">Capture</option>
             </select>
           </label>
           <label>Layout
@@ -786,7 +789,7 @@
             <div class="recipe-result-actions">
               <button type="button" onclick="selectRecipe('${escapeJs(recipe.id)}')">Select</button>
               <button type="button" class="button-secondary" onclick="editRecipe('${escapeJs(recipe.id)}')">Edit</button>
-              <button type="button" class="button-secondary refresh-cache-button" onclick="refreshRecipeCache('${escapeJs(recipe.id)}')">Refresh<br>Cache</button>
+              ${recipe.source === 'capture' ? '<button type="button" class="button-secondary refresh-cache-button" disabled title="Capture recipes cannot refresh from a web source.">Refresh<br>Cache</button>' : '<button type="button" class="button-secondary refresh-cache-button" onclick="refreshRecipeCache(\'' + escapeJs(recipe.id) + '\')">Refresh<br>Cache</button>'}
               <button type="button" class="danger" onclick="deleteRecipe('${escapeJs(recipe.id)}', '${escapeJs(recipe.name || '')}')">Delete</button>
             </div>
           </div>
