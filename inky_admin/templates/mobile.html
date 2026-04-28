@@ -159,7 +159,7 @@
           {% if status.running %}⏳ Refresh running{% elif display_mode == 'recipe' %}🍽️ Recipe Mode{% else %}📅 Menu Mode{% endif %}
         </div>
       </div>
-      <img src="{{ url_for('static', filename='blackcap_pi.png') }}" class="logo" alt="Blackcap Pi">
+      <img src="{{ url_for('static', filename='blackcap_pi_color.png') }}" class="logo" alt="Blackcap Pi">
     </header>
 
     <section class="card">
@@ -201,7 +201,7 @@
 
       <div class="button-grid">
         <button id="renderButton" class="primary" type="button">🍳 Render Recipe</button>
-        <button id="normalButton" class="normal" type="button">📅 Back to Menu</button>
+        <button id="normalButton" class="normal" type="button" {% if display_mode != 'recipe' %}disabled{% endif %}>📅 Back to Menu</button>
         <a class="admin-link wide" href="{{ url_for('index') }}">🛠️ Full Admin UI</a>
       </div>
       <div id="toast" class="toast"></div>
@@ -209,7 +209,7 @@
 
     <section class="card">
       <strong>⚡ How this works</strong>
-      <p class="small">Recipes are cached when added. This page switches modes, selects the recipe, and starts the recipe display refresh. “Back to Menu” switches to normal mode and restores the last saved menu image.</p>
+      <p class="small">Recipes are cached when added. Selecting a recipe only previews it here; Blackcap Pi switches to Recipe Mode only when you tap Render Recipe. “Back to Menu” is enabled after a recipe render has started and restores the last saved menu image.</p>
     </section>
   </main>
 
@@ -222,6 +222,7 @@
     const normalButton = document.getElementById('normalButton');
     const toast = document.getElementById('toast');
     const modePill = document.getElementById('modePill');
+    let displayMode = '{{ display_mode }}';
     const allOptions = Array.from(recipeSelect.options).map(option => ({
       value: option.value,
       text: option.text,
@@ -240,9 +241,13 @@
       toast.style.display = 'block';
     }
 
+    function updateBackToMenuState(isBusy = false) {
+      normalButton.disabled = isBusy || displayMode !== 'recipe';
+    }
+
     function setBusy(isBusy) {
       renderButton.disabled = isBusy;
-      normalButton.disabled = isBusy;
+      updateBackToMenuState(isBusy);
       modePill.textContent = isBusy ? '⏳ Refresh running' : modePill.textContent;
       modePill.classList.toggle('running', isBusy);
     }
@@ -321,8 +326,10 @@
       showToast('Sending recipe to the display...');
       try {
         const data = await postJson('{{ url_for('mobile_render_recipe') }}', { recipe_id: recipeId });
+        displayMode = data.display_mode || 'recipe';
         modePill.textContent = '🍽️ Recipe Mode';
         modePill.classList.add('recipe');
+        updateBackToMenuState(false);
         showToast(data.message || 'Recipe refresh started.');
       } catch (err) {
         showToast(err.message, true);
@@ -332,12 +339,18 @@
     });
 
     normalButton.addEventListener('click', async () => {
+      if (displayMode !== 'recipe') {
+        showToast('Back to Menu is available after a recipe has been rendered. 🫐', true);
+        return;
+      }
       setBusy(true);
       showToast('Restoring the last menu image...');
       try {
         const data = await postJson('{{ url_for('mobile_normal_mode') }}');
+        displayMode = data.display_mode || 'normal';
         modePill.textContent = '📅 Menu Mode';
         modePill.classList.remove('recipe');
+        updateBackToMenuState(false);
         showToast(data.message || 'Last menu image restored.');
       } catch (err) {
         showToast(err.message, true);
@@ -349,6 +362,7 @@
     recipeSearch.addEventListener('input', filterRecipes);
     recipeTypeFilter.addEventListener('change', filterRecipes);
     recipeSelect.addEventListener('change', updateSelectedCard);
+    updateBackToMenuState(false);
     updateSelectedCard();
   </script>
 </body>
