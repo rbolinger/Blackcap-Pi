@@ -229,10 +229,19 @@ salad,leaf
 ## ⏰ Automation (Cron)
 
 ```cron
+# 1. Maintenance: Monthly Deep Clean (1st of the month at 5:50 AM)
 50 5 1 * * /home/pi/inky_env/bin/python3 /home/pi/inky_blackout.py
+
+# 2. Daily Start: Initial Refresh (1st of the month at 6:00 AM)
+# Note: This ensures the screen is ready even if the 'smart' check doesn't trigger
 0 6 1 * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py --full-refresh
+
+# 3. Smart Refresh: Every 10 minutes, but only between 6:30 AM and 10:30 PM
+# 6:30 AM to 6:50 AM
 30,40,50 6 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+# 7:00 AM to 9:50 PM (The bulk of the day)
 */10 7-21 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+# 10:00 PM to 10:30 PM
 0,10,20,30 22 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
 ```
 
