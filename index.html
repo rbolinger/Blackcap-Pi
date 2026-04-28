@@ -87,27 +87,55 @@
 
 <body>
   <section class="hero">
-    <h1>🫐 Blackcap Pi</h1>
-    <p class="tagline">
-      A Raspberry Pi + e-ink kitchen display for weekly menus, recipe mode, and smart icon footers.
-    </p>
-    <p>
-      <strong>Blackcap Pi</strong> turns a simple published Google Sheet into a calm, always-on menu display with
-      automatically generated visual icons based on your weekly menu.
-    </p>
-    <p>
-      The name comes from the <strong>Blackcap</strong> (<em>Rubus occidentalis</em>), a type of black raspberry that
-      tastes like a traditional raspberry but has a deep, dark color—fitting for a project built around the
-      black-and-white simplicity and efficiency of an e-ink display. Also, “Inky Pi” was already taken.
-    </p>
-    <p style="font-size: 0.95rem; color: #6b7280;">
-      Curious about the fruit? Learn more about
-      <a href="https://en.wikipedia.org/wiki/Rubus_occidentalis" target="_blank" rel="noopener noreferrer">
-        <em>Rubus occidentalis</em>
-      </a>.
-    </p>
-    <a class="button" href="https://github.com/rbolinger/Blackcap-Pi">View on GitHub</a>
+    <div class="hero-header">
+      <h1>🫐 Blackcap Pi</h1>
+      <img
+        src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/blackcap_pi_color.png"
+        alt="Blackcap Pi Logo"
+        class="hero-logo">
+    </div>
+
+```
+<p class="tagline">
+  A Raspberry Pi + e-ink kitchen display for weekly menus, recipe mode, and smart icon footers.
+</p>
+
+<p>
+  <strong>Blackcap Pi</strong> turns a simple published Google Sheet into a calm, always-on menu display with
+  automatically generated visual icons based on your weekly menu.
+</p>
+
+<p>
+  The name comes from the <strong>Blackcap</strong> (<em>Rubus occidentalis</em>), a type of black raspberry that
+  tastes like a traditional raspberry but has a deep, dark color—fitting for a project built around the
+  black-and-white simplicity and efficiency of an e-ink display. Also, “Inky Pi” was already taken.
+</p>
+
+<p style="font-size: 0.95rem; color: #6b7280;">
+  Curious about the fruit? Learn more about
+  <a href="https://en.wikipedia.org/wiki/Rubus_occidentalis" target="_blank" rel="noopener noreferrer">
+    <em>Rubus occidentalis</em>
+  </a>.
+</p>
+
+<a class="button" href="https://github.com/rbolinger/Blackcap-Pi">View on GitHub</a>
+```
+
   </section>
+
+  <style>
+    .hero-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .hero-logo {
+      width: 90px;
+      height: auto;
+    }
+  </style>
 
   <h2>📅 Menu Mode with Smart Icons</h2>
   <img
