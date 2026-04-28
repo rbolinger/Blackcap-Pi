@@ -36,3 +36,8 @@ sync_to_git.sh
 
 # old files
 *_old.*
+docs/images/*.gif
+*.mp4
+
+docs/images/*.gif
+*.mp4
