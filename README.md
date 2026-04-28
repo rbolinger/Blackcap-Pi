@@ -40,7 +40,13 @@ Blackcap Pi turns a simple weekly Google Sheet into a dynamic e-ink display with
 
 ![Mobile UI](docs/images/mobile-ui.png)
 
-### 🎬 Rendering a Recipe
+---
+
+## 📱 Live Interaction
+
+Control the display in real time from your phone or tablet:
+
+### 🍽️ Rendering a Recipe
 
 ![Render Recipe](https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/recipe-render.gif)
 
