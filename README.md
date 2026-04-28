@@ -147,6 +147,98 @@ Open:
 
 ---
 
+## 🛠 Running Admin UI as a Service
+
+To keep the Blackcap Pi Admin UI running continuously and automatically start on boot, you can configure it as a `systemd` service.
+
+---
+
+### 📄 Create the Service File
+
+Create the following file:
+
+```bash
+sudo nano /etc/systemd/system/inky_admin.service
+```
+
+Paste in:
+
+```ini
+[Unit]
+Description=Inky Pi Admin Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/home/pi/inky_admin/venv/bin/python /home/pi/inky_admin/inky_admin_app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=INKY_CONFIG_PATH=/home/pi/inky_menu_config.ini
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+### 🔄 Enable and Start the Service
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable inky_admin.service
+sudo systemctl start inky_admin.service
+```
+
+---
+
+### 🔁 Restart the Service
+
+```bash
+sudo systemctl restart inky_admin.service
+```
+
+---
+
+### 🔍 View Service Status
+
+```bash
+systemctl status inky_admin.service
+```
+
+---
+
+### 📜 View Logs
+
+```bash
+journalctl -u inky_admin.service -f
+```
+
+---
+
+### 📖 View the Service File
+
+```bash
+systemctl cat inky_admin.service
+```
+
+---
+
+### 💡 Notes
+
+* The service runs as the `pi` user and uses a Python virtual environment.
+* `Restart=always` ensures the service automatically recovers if it crashes.
+* `INKY_CONFIG_PATH` points to your menu configuration file.
+* `PYTHONUNBUFFERED=1` ensures logs are written immediately.
+
+---
+
+This setup ensures the Admin UI is always available without needing to manually start it after reboot.
+
+---
+
 ## 📅 Menu Mode
 
 Menu Mode is the default behavior of Blackcap Pi.
