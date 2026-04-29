@@ -202,6 +202,7 @@
       <div class="button-grid">
         <button id="renderButton" class="primary" type="button">🍳 Render Recipe</button>
         <button id="normalButton" class="normal" type="button" {% if display_mode != 'recipe' %}disabled{% endif %}>📅 Back to Menu</button>
+        <button id="deleteButton" class="danger" type="button" disabled>🗑️ Delete Recipe</button>
         <a class="admin-link" href="{{ url_for('mobile_add_recipe_page') }}">➕ Add Recipe</a>
         <a class="admin-link" href="{{ url_for('index') }}">🛠️ Full Admin UI</a>
       </div>
@@ -221,10 +222,11 @@
     const selectedRecipe = document.getElementById('selectedRecipe');
     const renderButton = document.getElementById('renderButton');
     const normalButton = document.getElementById('normalButton');
+    const deleteButton = document.getElementById('deleteButton');
     const toast = document.getElementById('toast');
     const modePill = document.getElementById('modePill');
     let displayMode = '{{ display_mode }}';
-    const allOptions = Array.from(recipeSelect.options).map(option => ({
+    let allOptions = Array.from(recipeSelect.options).map(option => ({
       value: option.value,
       text: option.text,
       name: option.dataset.name || '',
@@ -246,9 +248,14 @@
       normalButton.disabled = isBusy || displayMode !== 'recipe';
     }
 
+    function updateDeleteState(isBusy = false) {
+      deleteButton.disabled = isBusy || !recipeSelect.value;
+    }
+
     function setBusy(isBusy) {
       renderButton.disabled = isBusy;
       updateBackToMenuState(isBusy);
+      updateDeleteState(isBusy);
       modePill.textContent = isBusy ? '⏳ Refresh running' : modePill.textContent;
       modePill.classList.toggle('running', isBusy);
     }
@@ -262,6 +269,7 @@
             <div class="recipe-title">Pick something tasty</div>
             <div class="recipe-desc">Then render it to the e-ink display.</div>
           </div>`;
+        updateDeleteState(false);
         return;
       }
       const name = option.dataset.name || option.textContent;
@@ -277,6 +285,7 @@
       if (img) img.src = imageUrl;
       selectedRecipe.querySelector('.recipe-title').textContent = name;
       selectedRecipe.querySelector('.recipe-desc').textContent = description;
+      updateDeleteState(false);
     }
 
     function filterRecipes() {
@@ -360,10 +369,39 @@
       }
     });
 
+
+    deleteButton.addEventListener('click', async () => {
+      const option = recipeSelect.selectedOptions[0];
+      const recipeId = recipeSelect.value;
+      if (!recipeId || !option) {
+        showToast('Choose a recipe to delete first. 🫐', true);
+        return;
+      }
+      const recipeName = option.dataset.name || option.textContent || 'this recipe';
+      if (!window.confirm(`Delete "${recipeName}" from the recipe library?`)) {
+        return;
+      }
+      setBusy(true);
+      showToast('Deleting recipe...');
+      try {
+        const deleteUrl = '{{ url_for('delete_recipe_api', recipe_id='__RECIPE_ID__') }}'.replace('__RECIPE_ID__', encodeURIComponent(recipeId));
+        await postJson(deleteUrl);
+        allOptions = allOptions.filter(item => item.value !== recipeId);
+        recipeSelect.value = '';
+        filterRecipes();
+        showToast('Recipe deleted.');
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        window.setTimeout(() => setBusy(false), 800);
+      }
+    });
+
     recipeSearch.addEventListener('input', filterRecipes);
     recipeTypeFilter.addEventListener('change', filterRecipes);
     recipeSelect.addEventListener('change', updateSelectedCard);
     updateBackToMenuState(false);
+    updateDeleteState(false);
     updateSelectedCard();
   </script>
 </body>

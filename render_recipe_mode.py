@@ -29,7 +29,7 @@ try:
 except Exception:
     sync_playwright = None
 
-from capture_recipe import CaptureRecipeError, build_capture_recipe_model
+from capture_recipe import CaptureRecipeError, build_capture_recipe_model, remove_capture_assets
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = Path(os.environ.get("INKY_CONFIG_PATH", str(Path.home() / "inky_menu_config.ini")))
@@ -222,6 +222,10 @@ def cache_image_path_for_recipe(recipe: dict[str, Any], runtime: dict[str, Any])
     return runtime["recipe_cache_dir"] / f"{safe_recipe_id(recipe)}.png"
 
 
+def cache_rendered_png_path_for_recipe(recipe: dict[str, Any], runtime: dict[str, Any]) -> Path:
+    return runtime["recipe_cache_dir"] / f"{safe_recipe_id(recipe)}_rendered.png"
+
+
 def get_cached_recipe_image_path(recipe: dict[str, Any]) -> Optional[Path]:
     for key in ["recipe_image_path", "dish_image_path", "cached_image_path"]:
         cached = str(recipe.get(key, "") or "").strip()
@@ -274,7 +278,16 @@ def cache_refresh_reason(recipe: dict[str, Any], source: str, url: str, layout: 
     return None
 
 
-def update_recipe_cache_metadata(repo_path: Path, repo: dict[str, Any], recipe_id: str, cache_path: Path, source_url: str, source: str, layout: str) -> None:
+def update_recipe_cache_metadata(
+    repo_path: Path,
+    repo: dict[str, Any],
+    recipe_id: str,
+    cache_path: Path,
+    source_url: str,
+    source: str,
+    layout: str,
+    rendered_png_path: Optional[Path] = None,
+) -> None:
     now = utc_now_iso()
     for item in repo.get("recipes", []):
         if str(item.get("id", "")).strip() == recipe_id:
@@ -286,6 +299,10 @@ def update_recipe_cache_metadata(repo_path: Path, repo: dict[str, Any], recipe_i
             item["cached_source"] = source
             item["cached_layout"] = layout
             item["cache_last_checked_at"] = now
+            if rendered_png_path is not None:
+                item["cached_rendered_image_path"] = str(rendered_png_path)
+                item["cached_png_path"] = str(rendered_png_path)
+                item["cached_png_written_at"] = now
             save_recipe_repo(repo_path, repo)
             return
 
@@ -955,6 +972,24 @@ def save_image_as_pdf(img: Image.Image, pdf_path: Path) -> None:
     os.replace(tmp_path, pdf_path)
 
 
+def save_image_as_png(img: Image.Image, png_path: Path) -> None:
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = png_path.with_suffix(png_path.suffix + ".tmp")
+    img.convert("RGB").save(tmp_path, "PNG")
+    os.replace(tmp_path, png_path)
+
+
+def clear_capture_working_files(repo_path: Path, repo: dict[str, Any], recipe_id: str) -> None:
+    for item in repo.get("recipes", []):
+        if str(item.get("id", "")).strip() == recipe_id:
+            item["capture_dir"] = ""
+            item["source_image_paths"] = []
+            item["ocr_text_path"] = ""
+            item["recipe_model_path"] = ""
+            save_recipe_repo(repo_path, repo)
+            return
+
+
 def render_fresh_recipe(recipe: dict[str, Any], runtime: dict[str, Any], source: str, url: str, layout: str, repo: dict[str, Any], recipe_id: str) -> Image.Image:
     if source == "web":
         recipe_model = parse_web_recipe(url)
@@ -1014,9 +1049,20 @@ def render_selected_recipe(runtime: dict[str, Any], refresh_cache: bool = False,
     print(f"Refreshing recipe cache because {reason}.")
     rendered = render_fresh_recipe(recipe, runtime, source, url, layout, repo, active_recipe_id)
     cache_path = cache_pdf_path_for_recipe(recipe, runtime)
+    rendered_png_path = cache_rendered_png_path_for_recipe(recipe, runtime)
     save_image_as_pdf(rendered, cache_path)
+    save_image_as_png(rendered, rendered_png_path)
     print(f"Cached recipe PDF written to: {cache_path}")
-    update_recipe_cache_metadata(runtime["repo_path"], repo, active_recipe_id, cache_path, url, source, layout)
+    print(f"Cached rendered recipe PNG written to: {rendered_png_path}")
+    update_recipe_cache_metadata(runtime["repo_path"], repo, active_recipe_id, cache_path, url, source, layout, rendered_png_path)
+    if source == "capture":
+        try:
+            remove_capture_assets(recipe)
+            repo_after_cleanup = load_recipe_repo(runtime["repo_path"])
+            clear_capture_working_files(runtime["repo_path"], repo_after_cleanup, active_recipe_id)
+            print("Capture upload working folder removed after successful cache build.")
+        except Exception as exc:
+            print(f"Warning: could not remove capture upload working folder: {exc}")
     try:
         repo_after = load_recipe_repo(runtime["repo_path"])
         copy_current_recipe_image(get_recipe_by_id(repo_after, active_recipe_id), runtime)

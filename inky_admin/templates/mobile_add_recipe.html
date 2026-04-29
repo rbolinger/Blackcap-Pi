@@ -27,6 +27,8 @@
     button.secondary, .link-button { background:#fff; color:var(--ink); border:1px solid var(--line); margin-top:10px; }
     button:disabled { opacity:.55; cursor:not-allowed; }
     .hint { color:var(--muted); font-size:.92rem; line-height:1.35; margin-top:6px; }
+    .photo-queue { margin-top:8px; padding:10px 12px; border:1px dashed var(--line); border-radius:14px; background:#fff; color:var(--muted); font-size:.92rem; line-height:1.35; }
+    .mini-button { min-height:44px; padding:10px 12px; border-radius:14px; font-size:.95rem; margin-top:8px; background:#fff; color:var(--ink); border:1px solid var(--line); }
     .toast { display:none; border-radius:16px; padding:12px; margin-top:12px; font-weight:750; background:#e0f2fe; color:#075985; overflow-wrap:anywhere; }
     .toast.error { background:#fee2e2; color:var(--red); }
     .actions { display:grid; grid-template-columns:1fr; gap:10px; margin-top:10px; }
@@ -62,7 +64,9 @@
         <div id="captureFields" style="display:none">
           <label for="photos">Recipe photos</label>
           <input id="photos" name="photos" type="file" accept="image/*" capture="environment" multiple>
-          <p class="hint">Take or upload one or more photos. They will be stored under the recipe cache folder and processed with OCR in the background.</p>
+          <div id="photoQueue" class="photo-queue">No photos selected yet.</div>
+          <button id="clearPhotosButton" class="mini-button" type="button">Clear selected photos</button>
+          <p class="hint">Take or upload one or more photos. On phones, you can tap the picker multiple times; each selection is added to the batch and compiled into one recipe PDF.</p>
         </div>
 
         <label for="name">Title / Name</label>
@@ -89,7 +93,7 @@
 
       <div id="toast" class="toast"></div>
       <div id="successActions" class="actions success-actions">
-        <button id="renderNewButton" class="primary" type="button">🍳 Render New Recipe</button>
+        <button id="renderNewButton" class="primary" type="button" disabled>🍳 Render New Recipe</button>
         <a class="link-button" href="{{ url_for('mobile_control') }}">📚 Recipe List</a>
       </div>
       <a class="link-button" href="{{ url_for('mobile_control') }}">← Back to Mobile Control</a>
@@ -108,6 +112,8 @@
     const successActions = document.getElementById('successActions');
     const renderNewButton = document.getElementById('renderNewButton');
     let newRecipeId = '';
+    let cachePollTimer = null;
+    let selectedPhotoFiles = [];
 
     function setMethod(method) {
       addMethod.value = method;
@@ -117,9 +123,48 @@
       urlFields.style.display = isCapture ? 'none' : '';
       captureFields.style.display = isCapture ? '' : 'none';
       urlInput.required = !isCapture;
-      photosInput.required = isCapture;
+      photosInput.required = false;
       submitButton.textContent = isCapture ? '📷 Save Capture Recipe' : '🫐 Save Web Recipe';
+      updatePhotoQueue();
     }
+
+    function updatePhotoQueue() {
+      const queue = document.getElementById('photoQueue');
+      if (!queue) return;
+      if (!selectedPhotoFiles.length) {
+        queue.textContent = 'No photos selected yet.';
+        return;
+      }
+      const names = selectedPhotoFiles.map((file, index) => `${index + 1}. ${file.name || 'Photo'}`);
+      queue.textContent = `${selectedPhotoFiles.length} photo${selectedPhotoFiles.length === 1 ? '' : 's'} selected: ${names.join(' • ')}`;
+    }
+
+    function syncPhotoInput() {
+      if (typeof DataTransfer === 'undefined') {
+        updatePhotoQueue();
+        return;
+      }
+      const transfer = new DataTransfer();
+      selectedPhotoFiles.forEach(file => transfer.items.add(file));
+      photosInput.files = transfer.files;
+      updatePhotoQueue();
+    }
+
+    photosInput.addEventListener('change', () => {
+      const incoming = Array.from(photosInput.files || []);
+      for (const file of incoming) {
+        const key = `${file.name}|${file.size}|${file.lastModified}`;
+        const exists = selectedPhotoFiles.some(existing => `${existing.name}|${existing.size}|${existing.lastModified}` === key);
+        if (!exists) selectedPhotoFiles.push(file);
+      }
+      syncPhotoInput();
+    });
+
+    document.getElementById('clearPhotosButton').addEventListener('click', () => {
+      selectedPhotoFiles = [];
+      photosInput.value = '';
+      syncPhotoInput();
+    });
 
     function showToast(message, isError = false) {
       toast.textContent = message;
@@ -138,12 +183,53 @@
       return data;
     }
 
+    async function checkCacheReady() {
+      if (!newRecipeId) return;
+      try {
+        const response = await fetch(`/api/recipes/${encodeURIComponent(newRecipeId)}/cache-status`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Could not check cache status.');
+        if (data.ready) {
+          renderNewButton.disabled = false;
+          showToast('Recipe PDF is ready. You can render it now. ✅');
+          if (cachePollTimer) {
+            window.clearInterval(cachePollTimer);
+            cachePollTimer = null;
+          }
+        } else {
+          renderNewButton.disabled = true;
+          showToast('Recipe saved. Building the PDF in the background...');
+        }
+      } catch (err) {
+        renderNewButton.disabled = true;
+        showToast(err.message, true);
+      }
+    }
+
+    function startCachePolling() {
+      if (cachePollTimer) window.clearInterval(cachePollTimer);
+      renderNewButton.disabled = true;
+      checkCacheReady();
+      cachePollTimer = window.setInterval(checkCacheReady, 3000);
+      window.setTimeout(() => {
+        if (cachePollTimer) {
+          window.clearInterval(cachePollTimer);
+          cachePollTimer = null;
+          showToast('Recipe is still building. Return to the recipe list and try rendering once the cache is ready.', true);
+        }
+      }, 120000);
+    }
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       submitButton.disabled = true;
       successActions.style.display = 'none';
       showToast('Saving recipe and queuing cache build...');
       try {
+        if (addMethod.value === 'capture' && selectedPhotoFiles.length === 0) {
+          throw new Error('Add at least one recipe photo.');
+        }
+        syncPhotoInput();
         const formData = new FormData(form);
         const response = await fetch('{{ url_for('mobile_add_recipe_submit') }}', { method: 'POST', body: formData });
         const data = await response.json().catch(() => ({}));
@@ -151,8 +237,12 @@
         newRecipeId = data.recipe?.id || '';
         showToast(data.cache_message || 'Recipe saved and cache build queued.');
         successActions.style.display = newRecipeId ? 'grid' : 'none';
+        renderNewButton.disabled = true;
+        if (newRecipeId) startCachePolling();
         const previousMethod = addMethod.value || 'url';
         form.reset();
+        selectedPhotoFiles = [];
+        syncPhotoInput();
         setMethod(previousMethod);
       } catch (err) {
         showToast(err.message, true);
@@ -171,7 +261,9 @@
       } catch (err) {
         showToast(err.message, true);
       } finally {
-        window.setTimeout(() => { renderNewButton.disabled = false; }, 1200);
+        if (newRecipeId) {
+          checkCacheReady();
+        }
       }
     });
 

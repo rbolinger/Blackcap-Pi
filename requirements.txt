@@ -16,3 +16,5 @@ spidev==3.8
 
 numpy==2.4.1
 pytesseract
+
+opencv-python-headless

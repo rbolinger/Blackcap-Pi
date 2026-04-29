@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,16 +15,13 @@ from typing import Dict, List
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for, flash
 
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from capture_recipe import CaptureRecipeError, remove_capture_assets, save_capture_images
+from capture_recipe import CaptureRecipeError, remove_capture_assets, save_capture_images, save_capture_recipe_image
 
-BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = Path(os.environ.get("INKY_CONFIG_PATH", str(Path.home() / "inky_menu_config.ini")))
 
 app = Flask(__name__)
@@ -40,6 +38,17 @@ class RefreshStatus:
 
 refresh_status = RefreshStatus()
 refresh_lock = threading.Lock()
+
+DEFAULT_RECIPE_TYPES = ["Breakfast", "Lunch", "Dinner", "Side", "Snack", "Dessert"]
+
+
+def recipe_type_options(recipes: list[dict] | None = None) -> list[str]:
+    values = {item for item in DEFAULT_RECIPE_TYPES}
+    for recipe in recipes or []:
+        value = str(recipe.get("recipe_type", "")).strip()
+        if value:
+            values.add(value)
+    return sorted(values, key=lambda value: (DEFAULT_RECIPE_TYPES.index(value) if value in DEFAULT_RECIPE_TYPES else 999, value.lower()))
 
 
 def load_config() -> configparser.ConfigParser:
@@ -346,6 +355,28 @@ def recipe_image_url_for_record(recipe: dict | None) -> str:
     return url_for("recipe_image", recipe_id=recipe["id"]) + f"?t={int(path.stat().st_mtime)}"
 
 
+def recipe_pdf_path_for_record(recipe: dict | None) -> Path | None:
+    if not recipe:
+        return None
+    pdf_raw = str(recipe.get("cached_pdf_path") or recipe.get("cached_file_path") or "").strip()
+    if not pdf_raw:
+        return None
+    path = Path(os.path.expanduser(pdf_raw))
+    if not path.is_absolute():
+        path = (BASE_DIR / path).resolve()
+    return path
+
+
+def recipe_cache_status_for_record(recipe: dict | None) -> dict:
+    pdf_path = recipe_pdf_path_for_record(recipe)
+    ready = bool(pdf_path and pdf_path.exists() and pdf_path.is_file())
+    return {
+        "ready": ready,
+        "cached_pdf_path": str(pdf_path) if pdf_path else "",
+        "cached_file_written_at": str((recipe or {}).get("cached_file_written_at") or ""),
+    }
+
+
 def copy_recipe_image_to_current(config: configparser.ConfigParser, recipe: dict | None) -> bool:
     dest = current_recipe_image_path(config)
     src = recipe_image_path_for_record(recipe)
@@ -539,9 +570,11 @@ def create_capture_recipe_from_upload(config: configparser.ConfigParser, form, f
     existing_for_ids = [normalize_recipe_record(r) for r in raw_recipes]
     recipe_id = make_unique_recipe_id(existing_for_ids, name)
 
-    manifest = save_capture_images(files, recipe_cache_dir(config), recipe_id)
+    cache_dir = recipe_cache_dir(config)
+    manifest = save_capture_images(files, cache_dir, recipe_id)
     capture_dir = str(manifest.get("capture_dir", ""))
     source_images = manifest.get("source_image_paths", [])
+    preview_image_path = save_capture_recipe_image(manifest, cache_dir, recipe_id)
 
     recipe = normalize_recipe_record({
         "id": recipe_id,
@@ -556,6 +589,8 @@ def create_capture_recipe_from_upload(config: configparser.ConfigParser, form, f
         "source_image_paths": source_images,
         "ocr_text_path": str(Path(capture_dir) / "ocr_text.txt"),
         "recipe_model_path": str(Path(capture_dir) / "recipe_model.json"),
+        "recipe_image_path": str(preview_image_path or ""),
+        "dish_image_path": str(preview_image_path or ""),
     })
     raw_recipes.append(recipe)
     repo["recipes"] = raw_recipes
@@ -1219,17 +1254,28 @@ def _start_refresh_if_idle(mode: str) -> tuple[bool, str]:
     return True, f"{mode.title()} refresh started."
 
 
+@app.route("/api/recipes/<recipe_id>/cache-status", methods=["GET"])
+def recipe_cache_status_api(recipe_id: str):
+    config = load_config()
+    recipe = next((r for r in list_recipes(config) if r["id"] == recipe_id), None)
+    if not recipe:
+        return jsonify({"ok": False, "error": "Recipe not found."}), 404
+    status = recipe_cache_status_for_record(recipe)
+    return jsonify({
+        "ok": True,
+        "recipe_id": recipe_id,
+        "ready": status["ready"],
+        "cached_pdf_path": status["cached_pdf_path"],
+        "cached_file_written_at": status["cached_file_written_at"],
+        "recipe_image_url": recipe_image_url_for_record(recipe),
+    })
+
+
 @app.route("/mobile/add-recipe", methods=["GET"])
 def mobile_add_recipe_page():
     config = load_config()
     recipes = list_recipes(config)
-    recipe_types = sorted({
-        str(recipe.get("recipe_type", "")).strip()
-        for recipe in recipes
-        if str(recipe.get("recipe_type", "")).strip()
-    }, key=lambda value: value.lower())
-    if not recipe_types:
-        recipe_types = ["Breakfast", "Lunch", "Dinner", "Side", "Snack", "Dessert"]
+    recipe_types = recipe_type_options(recipes)
     return render_template("mobile_add_recipe.html", recipe_types=recipe_types)
 
 
@@ -1264,11 +1310,14 @@ def mobile_add_recipe_submit():
     except Exception as exc:
         return jsonify({"ok": False, "error": f"Could not add recipe: {exc}"}), 500
 
+    cache_status = recipe_cache_status_for_record(saved_recipe)
     return jsonify({
         "ok": True,
         "recipe": saved_recipe,
         "cache_queued": bool(cache_ok),
         "cache_message": cache_message,
+        "cache_ready": cache_status["ready"],
+        "cached_pdf_path": cache_status["cached_pdf_path"],
         "recipe_image_url": recipe_image_url_for_record(saved_recipe),
     })
 
@@ -1282,11 +1331,7 @@ def mobile_control():
     selected_recipe = get_selected_recipe(config)
     if selected_recipe:
         selected_recipe["recipe_image_url"] = recipe_image_url_for_record(selected_recipe)
-    recipe_types = sorted({
-        str(recipe.get("recipe_type", "")).strip()
-        for recipe in recipes
-        if str(recipe.get("recipe_type", "")).strip()
-    }, key=lambda value: value.lower())
+    recipe_types = recipe_type_options(recipes)
     return render_template(
         "mobile.html",
         display_mode=get_display_mode(config),
@@ -1308,6 +1353,14 @@ def mobile_render_recipe():
     recipe = next((r for r in list_recipes(config) if r["id"] == recipe_id), None)
     if not recipe:
         return jsonify({"ok": False, "error": "Recipe not found."}), 404
+
+    cache_status = recipe_cache_status_for_record(recipe)
+    if not cache_status["ready"]:
+        return jsonify({
+            "ok": False,
+            "error": "Recipe cache is still building. Please wait until the PDF is ready before rendering.",
+            "cache_ready": False,
+        }), 409
 
     # Selection/preview should not switch modes. Only switch to Recipe Mode
     # once we know the recipe render can actually start.
