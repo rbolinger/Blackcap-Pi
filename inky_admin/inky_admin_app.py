@@ -3,6 +3,7 @@ from __future__ import annotations
 import configparser
 import csv
 import json
+import logging
 import os
 import re
 import shutil
@@ -14,17 +15,21 @@ from pathlib import Path
 from typing import Dict, List
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for, flash
+from werkzeug.exceptions import ClientDisconnected, RequestEntityTooLarge
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from capture_recipe import CaptureRecipeError, remove_capture_assets, save_capture_images, save_capture_recipe_image
+from capture_recipe import CaptureRecipeError, extract_url_from_images, remove_capture_assets, save_capture_images, save_capture_recipe_image
 
 CONFIG_PATH = Path(os.environ.get("INKY_CONFIG_PATH", str(Path.home() / "inky_menu_config.ini")))
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 app.secret_key = os.environ.get("INKY_ADMIN_SECRET", "change-me")
 
 @dataclass
@@ -558,6 +563,34 @@ def collect_missing_required(config: configparser.ConfigParser) -> List[str]:
         if cfg(config, section, key).strip() == "":
             missing.append(f"[{section}] {key}")
     return missing
+
+
+def save_url_scan_images(files, recipe_cache_dir: Path) -> list[str]:
+    """Save temporary QR/footer URL photos and return normalized image paths."""
+    from uuid import uuid4
+    scan_dir = Path(recipe_cache_dir).expanduser().resolve() / "url_scans" / uuid4().hex
+    scan_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths: list[str] = []
+    try:
+        for index, uploaded in enumerate(files, start=1):
+            if uploaded is None or not getattr(uploaded, "filename", ""):
+                continue
+            target = scan_dir / f"url_scan_{index:03d}.jpg"
+            # Use PIL for normalization without depending on capture recipe file naming.
+            from PIL import Image, ImageOps
+            with Image.open(uploaded.stream) as img:
+                img = ImageOps.exif_transpose(img)
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.thumbnail((3000, 3000), Image.LANCZOS)
+                img.save(target, format="JPEG", quality=95)
+            saved_paths.append(str(target))
+        if not saved_paths:
+            raise ValueError("Upload a QR code or URL footer photo first.")
+        return saved_paths
+    except Exception:
+        shutil.rmtree(scan_dir, ignore_errors=True)
+        raise
 
 
 def create_capture_recipe_from_upload(config: configparser.ConfigParser, form, files) -> tuple[dict, bool, str]:
@@ -1269,6 +1302,50 @@ def recipe_cache_status_api(recipe_id: str):
         "cached_file_written_at": status["cached_file_written_at"],
         "recipe_image_url": recipe_image_url_for_record(recipe),
     })
+
+
+@app.route("/mobile/extract-url", methods=["POST"])
+def mobile_extract_url_from_photo():
+    config = load_config()
+    temp_paths: list[str] = []
+    temp_root: Path | None = None
+    try:
+        app.logger.info("[URL SCAN] Request received; content_length=%s", request.content_length)
+        files = request.files.getlist("url_photos")
+        app.logger.info("[URL SCAN] Files received: %s", len(files))
+        if not files:
+            return jsonify({"ok": False, "error": "No URL or QR photo was uploaded."}), 400
+
+        temp_paths = save_url_scan_images(files, recipe_cache_dir(config))
+        if temp_paths:
+            temp_root = Path(temp_paths[0]).parent
+        app.logger.info("[URL SCAN] Saved temp paths: %s", temp_paths)
+
+        result = extract_url_from_images(temp_paths)
+        url = str(result.get("url") or "").strip()
+        urls = result.get("urls", []) or []
+        app.logger.info("[URL SCAN] Extracted URL: %r; candidates=%s", url, urls)
+
+        if not url:
+            return jsonify({"ok": False, "error": "No URL detected. Try retaking the photo closer to the QR code or footer URL."}), 200
+
+        return jsonify({"ok": True, "url": url, "urls": urls})
+    except ClientDisconnected:
+        app.logger.warning("[URL SCAN] Client disconnected before upload completed")
+        return jsonify({"ok": False, "error": "The photo upload was interrupted. Try again with a closer/cropped photo."}), 400
+    except RequestEntityTooLarge:
+        app.logger.warning("[URL SCAN] Upload too large")
+        return jsonify({"ok": False, "error": "The photo is too large. Try a closer/cropped photo or lower camera resolution."}), 413
+    except (CaptureRecipeError, ValueError) as exc:
+        app.logger.info("[URL SCAN] Could not extract URL: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 200
+    except Exception as exc:
+        app.logger.exception("[URL SCAN] Unexpected error")
+        return jsonify({"ok": False, "error": f"Could not extract URL: {exc}"}), 500
+    finally:
+        if temp_root:
+            app.logger.info("[URL SCAN] Cleaning temp dir: %s", temp_root)
+            shutil.rmtree(temp_root, ignore_errors=True)
 
 
 @app.route("/mobile/add-recipe", methods=["GET"])

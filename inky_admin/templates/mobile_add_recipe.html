@@ -15,7 +15,7 @@
     .hero p { margin:4px 0 0; color:var(--muted); }
     .logo { width:68px; height:68px; object-fit:contain; flex:0 0 auto; }
     .card { background:rgba(255,250,242,.94); border:1px solid var(--line); border-radius:22px; box-shadow:var(--shadow); padding:16px; margin-bottom:14px; }
-    .tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+    .tabs { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
     .tab { border:1px solid var(--line); background:#fff; color:var(--ink); }
     .tab.active { background:var(--blue); color:#fff; border-color:var(--blue); }
     label { display:block; font-weight:850; margin:12px 0 8px; }
@@ -48,8 +48,9 @@
 
     <section class="card">
       <div class="tabs" role="tablist" aria-label="Add recipe method">
-        <button id="urlTab" class="tab active" type="button" onclick="setMethod('url')">🌐 From URL</button>
-        <button id="captureTab" class="tab" type="button" onclick="setMethod('capture')">📷 From Photos</button>
+        <button id="urlTab" class="tab active" type="button" onclick="setMethod('url')">🌐 Paste URL</button>
+        <button id="scanTab" class="tab" type="button" onclick="setMethod('scan')">▣ Scan URL</button>
+        <button id="captureTab" class="tab" type="button" onclick="setMethod('capture')">📷 Photos</button>
       </div>
 
       <form id="addRecipeForm" enctype="multipart/form-data">
@@ -59,6 +60,13 @@
           <label for="url">Recipe URL</label>
           <input id="url" name="url" type="url" placeholder="https://example.com/my-recipe">
           <p class="hint">URL recipes are saved as source Web and queued for background cache generation.</p>
+        </div>
+
+        <div id="scanFields" style="display:none">
+          <label for="urlPhotos">Scan QR code or URL footer photo</label>
+          <input id="urlPhotos" name="url_photos" type="file" accept="image/*" capture="environment" multiple>
+          <button id="extractUrlButton" class="mini-button" type="button">🔎 Extract URL from Photo</button>
+          <p class="hint">Use this when the printed recipe has a QR code or a small URL in the footer. After the URL is found, the recipe is added exactly like a pasted web URL.</p>
         </div>
 
         <div id="captureFields" style="display:none">
@@ -105,6 +113,9 @@
     const addMethod = document.getElementById('addMethod');
     const urlFields = document.getElementById('urlFields');
     const captureFields = document.getElementById('captureFields');
+    const scanFields = document.getElementById('scanFields');
+    const urlPhotosInput = document.getElementById('urlPhotos');
+    const extractUrlButton = document.getElementById('extractUrlButton');
     const urlInput = document.getElementById('url');
     const photosInput = document.getElementById('photos');
     const submitButton = document.getElementById('submitButton');
@@ -118,9 +129,12 @@
     function setMethod(method) {
       addMethod.value = method;
       const isCapture = method === 'capture';
-      document.getElementById('urlTab').classList.toggle('active', !isCapture);
+      const isScan = method === 'scan';
+      document.getElementById('urlTab').classList.toggle('active', method === 'url');
+      document.getElementById('scanTab').classList.toggle('active', isScan);
       document.getElementById('captureTab').classList.toggle('active', isCapture);
       urlFields.style.display = isCapture ? 'none' : '';
+      scanFields.style.display = isScan ? '' : 'none';
       captureFields.style.display = isCapture ? '' : 'none';
       urlInput.required = !isCapture;
       photosInput.required = false;
@@ -219,6 +233,67 @@
         }
       }, 120000);
     }
+
+    function dataUrlToFile(dataUrl, filename) {
+      const parts = dataUrl.split(",");
+      const mimeMatch = parts[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      const binary = atob(parts[1]);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new File([bytes], filename, { type: mime });
+    }
+
+    async function compressImageForUpload(file) {
+      if (!file || !file.type || !file.type.startsWith("image/")) return file;
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onerror = () => resolve(file);
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => resolve(file);
+          img.onload = () => {
+            const maxSide = 1000;
+            const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.70);
+            resolve(dataUrlToFile(dataUrl, (file.name || "url_scan").replace(/\.[^.]+$/, "") + "_scan.jpg"));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    extractUrlButton.addEventListener('click', async () => {
+      const files = Array.from(urlPhotosInput.files || []);
+      if (!files.length) {
+        showToast('Take or choose a QR code / URL footer photo first.', true);
+        return;
+      }
+      extractUrlButton.disabled = true;
+      showToast('Looking for a QR code or printed URL...');
+      try {
+        const formData = new FormData();
+        for (const file of files) {
+          const compressed = await compressImageForUpload(file);
+          formData.append('url_photos', compressed);
+        }
+        const response = await fetch('{{ url_for('mobile_extract_url_from_photo') }}', { method: 'POST', body: formData });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Could not extract URL.');
+        urlInput.value = data.url || '';
+        showToast(data.url ? `URL found: ${data.url}` : 'URL found.');
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        extractUrlButton.disabled = false;
+      }
+    });
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
