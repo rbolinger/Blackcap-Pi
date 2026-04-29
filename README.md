@@ -172,7 +172,7 @@ After=network.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi
-ExecStart=/home/pi/inky_admin/venv/bin/python /home/pi/inky_admin/inky_admin_app.py
+ExecStart=/home/pi/inky_env/bin/python /home/pi/inky_admin/inky_admin_app.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
