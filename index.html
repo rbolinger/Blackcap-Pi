@@ -19,18 +19,9 @@
       background: #fffaf3;
     }
 
-    h1 {
-      font-size: 3rem;
-      margin-bottom: 0.25rem;
-    }
-
-    h2 {
-      margin-top: 3rem;
-    }
-
-    h3 {
-      margin-top: 2rem;
-    }
+    h1 { font-size: 3rem; margin-bottom: 0.25rem; }
+    h2 { margin-top: 3rem; }
+    h3 { margin-top: 2rem; }
 
     .hero {
       padding: 36px;
@@ -49,24 +40,30 @@
       border-radius: 16px;
       border: 1px solid #e5e7eb;
       background: white;
-    }
-
-    /* Fruit image (no border to remove the line) */
-    .fruit-image {
       display: block;
-      width: 100%;
-      max-width: 520px;
-      margin: 20px auto 6px auto;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.12);
-      border: none;
     }
 
-    .fruit-caption {
+    /* MEDIA BLOCK (image + caption together) */
+    .media {
+      margin: 20px auto 18px auto;
+      max-width: 720px;
+    }
+
+    .media img {
+      width: 100%;
+      border-radius: 16px;
+    }
+
+    .media.no-border img {
+      border: none;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    }
+
+    .media-caption {
       text-align: center;
       font-size: 0.9rem;
       color: #6b7280;
-      margin-top: 0;
-      margin-bottom: 10px;
+      margin-top: 6px;
     }
 
     .grid {
@@ -116,18 +113,10 @@
     }
 
     @media (max-width: 640px) {
-      body {
-        padding: 24px 12px;
-      }
+      body { padding: 24px 12px; }
+      .hero { padding: 28px 24px; }
 
-      .hero {
-        padding: 28px 24px;
-      }
-
-      .hero-header {
-        align-items: flex-start;
-        gap: 12px;
-      }
+      .hero-header { gap: 12px; }
 
       .hero-header h1 {
         font-size: 2.6rem;
@@ -141,9 +130,8 @@
         margin-right: -6px;
       }
 
-      .fruit-image {
-        max-width: 100%;
-        margin: 16px auto 6px auto;
+      .media {
+        margin: 16px auto 14px auto;
       }
     }
 
@@ -186,12 +174,13 @@
       black-and-white simplicity and efficiency of an e-ink display. Also, “Inky Pi” was already taken.
     </p>
 
-    <!-- Blackcap image -->
-    <img
-      src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/blackcap.png"
-      alt="Blackcap fruit"
-      class="fruit-image">
-    <p class="fruit-caption"><em>Fresh blackcap berries (aka black raspberries).</em></p>
+    <!-- Fruit -->
+    <div class="media no-border">
+      <img
+        src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/blackcap.png"
+        alt="Blackcap fruit">
+      <div class="media-caption"><em>Fresh blackcap berries (aka black raspberries).</em></div>
+    </div>
 
     <p style="font-size: 0.95rem; color: #6b7280;">
       Curious about the fruit? Learn more about
@@ -201,29 +190,37 @@
     </p>
 
     <a class="button" href="https://github.com/rbolinger/Blackcap-Pi">View on GitHub</a>
-
   </section>
 
   <h2>📅 Menu Mode with Smart Icons</h2>
-  <img
-    src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/menu-with-icons.png"
-    alt="Blackcap Pi menu mode with generated footer icons">
-  <p><em>Automatically generated icons based on weekly menu content.</em></p>
+
+  <div class="media">
+    <img
+      src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/menu-with-icons.png"
+      alt="Blackcap Pi menu mode with generated footer icons">
+    <div class="media-caption"><em>Automatically generated icons based on weekly menu content.</em></div>
+  </div>
 
   <h2>📱 Live Interaction</h2>
   <p>Control the display in real time from your phone or tablet.</p>
 
   <h3>🍽️ Rendering a Recipe</h3>
-  <img
-    src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/recipe-render.gif"
-    alt="Rendering a recipe from the mobile interface">
-  <p><em>Select a recipe and render it to the display.</em></p>
+
+  <div class="media">
+    <img
+      src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/recipe-render.gif"
+      alt="Rendering a recipe from the mobile interface">
+    <div class="media-caption"><em>Select a recipe and render it to the display.</em></div>
+  </div>
 
   <h3>🔄 Returning to Menu</h3>
-  <img
-    src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/back-to-menu.gif"
-    alt="Returning the display to menu mode">
-  <p><em>Restore the menu display with a single tap.</em></p>
+
+  <div class="media">
+    <img
+      src="https://raw.githubusercontent.com/rbolinger/Blackcap-Pi-Assets/main/images/back-to-menu.gif"
+      alt="Returning the display to menu mode">
+    <div class="media-caption"><em>Restore the menu display with a single tap.</em></div>
+  </div>
 
   <h2>✨ Features</h2>
   <div class="grid">
