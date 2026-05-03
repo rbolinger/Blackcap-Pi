@@ -257,6 +257,12 @@
             <label>Display Height<input type="text" name="display_height" value="{{ config['display'].get('display_height','') }}"></label>
           </div>
 
+          <h3>Deep Clean Display Script</h3>
+          <div class="one-col">
+            <label>Deep Clean Python Path<input type="text" name="deep_clean_python_path" value="{{ config['deep_clean_display'].get('python_path','') }}"></label>
+            <label>Deep Clean Script Path<input type="text" name="deep_clean_script_path" value="{{ config['deep_clean_display'].get('script_path','') }}"></label>
+          </div>
+
           <div id="normal-mode-section" class="mode-normal">
             <h3>Normal Mode Script</h3>
             <div class="one-col">
@@ -378,6 +384,14 @@
         <div class="button-row mode-recipe">
           <form action="{{ url_for('run_refresh', mode='recipe') }}" method="post">
             <button id="recipe-refresh-button" type="submit" {% if status.running %}disabled{% endif %}>Render Recipe</button>
+          </form>
+        </div>
+
+        <hr>
+        <p class="subtle">Occasional maintenance action for reducing e-ink ghosting.</p>
+        <div class="button-row">
+          <form action="{{ url_for('run_display_reset') }}" method="post" onsubmit="return confirm('This will fully refresh the display and may take about 30 seconds. Continue?');">
+            <button id="deep-clean-button" type="submit" {% if status.running %}disabled{% endif %}>Deep Clean Display</button>
           </form>
         </div>
 
@@ -967,9 +981,11 @@
         const smartButton = document.getElementById("smart-refresh-button");
         const fullButton = document.getElementById("full-refresh-button");
         const recipeButton = document.getElementById("recipe-refresh-button");
+        const deepCleanButton = document.getElementById("deep-clean-button");
         if (smartButton) smartButton.disabled = data.running;
         if (fullButton) fullButton.disabled = data.running;
         if (recipeButton) recipeButton.disabled = data.running;
+        if (deepCleanButton) deepCleanButton.disabled = data.running;
         const restoreButton = document.getElementById("restore-last-menu-button");
         if (restoreButton) {
           restoreButton.dataset.finalPreviewExists = data.final_preview_exists ? "1" : "0";

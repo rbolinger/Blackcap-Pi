@@ -67,6 +67,7 @@ def load_config() -> configparser.ConfigParser:
         "general",
         "normal_mode",
         "recipe_mode",
+        "deep_clean_display",
         "recipe_repository",
         "api",
         "menu",
@@ -97,6 +98,11 @@ def load_config() -> configparser.ConfigParser:
     config["recipe_mode"].setdefault("python_path", "/home/pi/inky_env/bin/python3")
     config["recipe_mode"].setdefault("script_path", "/home/pi/render_recipe_mode.py")
     config["recipe_mode"].setdefault("selected_recipe_id", "")
+
+    # Deep clean display script. This is intentionally separate from normal/recipe
+    # mode so the Admin UI button can run the same reset script used by cron.
+    config["deep_clean_display"].setdefault("python_path", config["normal_mode"].get("python_path", "/home/pi/inky_env/bin/python3"))
+    config["deep_clean_display"].setdefault("script_path", "/home/pi/inky_blackout.py")
     config["recipe_repository"].setdefault("repo_path", "/home/pi/inky_recipe_repo.json")
     config["recipe_repository"].setdefault("cache_dir", "/home/pi/recipe_cache")
 
@@ -532,6 +538,8 @@ def collect_missing_required(config: configparser.ConfigParser) -> List[str]:
         ("general", "display_mode"),
         ("display", "display_width"),
         ("display", "display_height"),
+        ("deep_clean_display", "python_path"),
+        ("deep_clean_display", "script_path"),
     ]
 
     if mode == "recipe":
@@ -988,7 +996,7 @@ def save_settings():
 
     # Ensure all sections exist before assignment.
     for section in [
-        "inky_admin", "general", "normal_mode", "recipe_mode", "recipe_repository", "api",
+        "inky_admin", "general", "normal_mode", "recipe_mode", "deep_clean_display", "recipe_repository", "api",
         "menu", "noun_project", "display", "paths", "footer", "processing",
     ]:
         if section not in config:
@@ -1022,6 +1030,11 @@ def save_settings():
         ("recipe_mode", "python_path"): request.form.get("recipe_python_path", "").strip(),
         ("recipe_mode", "script_path"): request.form.get("recipe_script_path", "").strip(),
         ("recipe_mode", "selected_recipe_id"): request.form.get("selected_recipe_id", "").strip(),
+
+        # Deep clean display script entry point.
+        ("deep_clean_display", "python_path"): request.form.get("deep_clean_python_path", "").strip(),
+        ("deep_clean_display", "script_path"): request.form.get("deep_clean_script_path", "").strip(),
+
         ("recipe_repository", "repo_path"): request.form.get("recipe_repo_path", "").strip(),
 
         # Normal menu settings. These form controls are hidden in recipe mode, not disabled,
@@ -1194,6 +1207,64 @@ def run_refresh_thread(mode: str) -> None:
         with refresh_lock:
             refresh_status.last_return_code = "error"
             refresh_status.last_output += ("" if refresh_status.last_output.endswith("\n") or refresh_status.last_output == "" else "\n") + str(exc)
+            refresh_status.last_finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            refresh_status.running = False
+
+
+def run_deep_clean_display_thread() -> None:
+    from datetime import datetime
+    config = load_config()
+    python_path = path_from_value(cfg(config, "deep_clean_display", "python_path"))
+    script_path = path_from_value(cfg(config, "deep_clean_display", "script_path"))
+
+    if not python_path:
+        with refresh_lock:
+            refresh_status.running = False
+            refresh_status.last_return_code = "missing"
+            refresh_status.last_finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            refresh_status.last_output = "Set [deep_clean_display] python_path in the admin UI."
+        return
+
+    if not script_path:
+        with refresh_lock:
+            refresh_status.running = False
+            refresh_status.last_return_code = "missing"
+            refresh_status.last_finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            refresh_status.last_output = "Set [deep_clean_display] script_path in the admin UI."
+        return
+
+    cmd = [str(python_path), str(script_path)]
+    env = os.environ.copy()
+    env["INKY_CONFIG_PATH"] = str(CONFIG_PATH)
+
+    with refresh_lock:
+        refresh_status.running = True
+        refresh_status.mode = "deep_clean_display"
+        refresh_status.last_started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        refresh_status.last_finished = "Running"
+        refresh_status.last_return_code = "running"
+        refresh_status.last_output = ""
+
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+            cwd=str(script_path.parent),
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            append_output(line)
+        code = process.wait()
+        with refresh_lock:
+            refresh_status.last_return_code = str(code)
+    except Exception as exc:
+        with refresh_lock:
+            refresh_status.last_return_code = "error"
+            refresh_status.last_output += ("" if refresh_status.last_output.endswith("\n") or refresh_status.last_output == "" else "\n") + str(exc)
     finally:
         with refresh_lock:
             refresh_status.last_finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1273,6 +1344,19 @@ def run_refresh(mode: str):
     thread = threading.Thread(target=run_refresh_thread, args=(mode,), daemon=True)
     thread.start()
     flash(f"{mode.title()} refresh started.", "success")
+    return redirect(url_for("index"))
+
+
+
+@app.route("/run-display-reset", methods=["POST"])
+def run_display_reset():
+    with refresh_lock:
+        if refresh_status.running:
+            flash("A display action is already running.", "error")
+            return redirect(url_for("index"))
+    thread = threading.Thread(target=run_deep_clean_display_thread, daemon=True)
+    thread.start()
+    flash("Deep clean display started.", "success")
     return redirect(url_for("index"))
 
 
