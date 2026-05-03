@@ -16,6 +16,10 @@ python_path = /home/pi/inky_env/bin/python3
 script_path = /home/pi/render_recipe_mode.py
 selected_recipe_id = chicken_shawarma_tacos
 
+[deep_clean_display]
+python_path = /home/pi/inky_env/bin/python3
+script_path = /home/pi/inky_blackout.py
+
 [menu]
 url = [Change Me - Google Sheet Menu URL]
 page_wait_seconds = 20
