@@ -390,7 +390,7 @@
         <hr>
         <p class="subtle">Occasional maintenance action for reducing e-ink ghosting.</p>
         <div class="button-row">
-          <form action="{{ url_for('run_display_reset') }}" method="post" onsubmit="return confirm('This will fully refresh the display and may take about 30 seconds. Continue?');">
+          <form action="{{ url_for('run_display_reset') }}" method="post" onsubmit="return confirm('This will fully refresh the display and may take a few minutes depending on your configured delay. Continue?');">
             <button id="deep-clean-button" type="submit" {% if status.running %}disabled{% endif %}>Deep Clean Display</button>
           </form>
         </div>

@@ -102,7 +102,7 @@ def load_config() -> configparser.ConfigParser:
     # Deep clean display script. This is intentionally separate from normal/recipe
     # mode so the Admin UI button can run the same reset script used by cron.
     config["deep_clean_display"].setdefault("python_path", config["normal_mode"].get("python_path", "/home/pi/inky_env/bin/python3"))
-    config["deep_clean_display"].setdefault("script_path", "/home/pi/inky_blackout.py")
+    config["deep_clean_display"].setdefault("script_path", "/home/pi/inky_deep_clean.py")
     config["recipe_repository"].setdefault("repo_path", "/home/pi/inky_recipe_repo.json")
     config["recipe_repository"].setdefault("cache_dir", "/home/pi/recipe_cache")
 
@@ -1034,6 +1034,7 @@ def save_settings():
         # Deep clean display script entry point.
         ("deep_clean_display", "python_path"): request.form.get("deep_clean_python_path", "").strip(),
         ("deep_clean_display", "script_path"): request.form.get("deep_clean_script_path", "").strip(),
+        ("deep_clean_display", "post_white_delay_seconds"): request.form.get("deep_clean_post_white_delay_seconds", "").strip(),
 
         ("recipe_repository", "repo_path"): request.form.get("recipe_repo_path", "").strip(),
 

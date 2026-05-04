@@ -18,7 +18,7 @@ selected_recipe_id = chicken_shawarma_tacos
 
 [deep_clean_display]
 python_path = /home/pi/inky_env/bin/python3
-script_path = /home/pi/inky_blackout.py
+script_path = /home/pi/inky_deep_clean.py
 
 [menu]
 url = [Change Me - Google Sheet Menu URL]
