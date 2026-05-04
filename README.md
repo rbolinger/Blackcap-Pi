@@ -96,7 +96,7 @@ Blackcap-Pi/
 │   └── inky_admin_app.py
 ├── inky_menu.py                # 📅 Menu rendering logic
 ├── render_recipe_mode.py       # 🍽️ Recipe display renderer
-├── inky_blackout.py            # 🧼 Monthly deep clean
+├── inky_deep_clean.py            # 🧼 Monthly deep clean
 ├── inky_menu_config.ini        # ⚙️ Configuration
 ├── inky_env/                   # 🐍 Python virtual environment
 └── README.md
@@ -322,7 +322,7 @@ salad,leaf
 
 ```cron
 # 1. Maintenance: Monthly Deep Clean (1st of the month at 5:50 AM)
-50 5 1 * * /home/pi/inky_env/bin/python3 /home/pi/inky_blackout.py
+50 5 1 * * /home/pi/inky_env/bin/python3 /home/pi/inky_deep_clean.py
 
 # 2. Daily Start: Initial Refresh (1st of the month at 6:00 AM)
 # Note: This ensures the screen is ready even if the 'smart' check doesn't trigger
