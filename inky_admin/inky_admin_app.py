@@ -497,6 +497,28 @@ def path_from_value(raw: str) -> Path | None:
     return path
 
 
+def display_lock_path(config: configparser.ConfigParser) -> Path | None:
+    return path_from_value(cfg(config, "paths", "lockfile"))
+
+
+def display_lock_busy(config: configparser.ConfigParser) -> tuple[bool, str]:
+    lock_path = display_lock_path(config)
+    if lock_path and lock_path.exists():
+        return True, f"Display is busy; lock file already exists: {lock_path}"
+    return False, ""
+
+
+def set_refresh_status_finished(mode: str, return_code: str, output: str) -> None:
+    from datetime import datetime
+    with refresh_lock:
+        refresh_status.running = False
+        refresh_status.mode = mode
+        refresh_status.last_started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        refresh_status.last_finished = refresh_status.last_started
+        refresh_status.last_return_code = return_code
+        refresh_status.last_output = output
+
+
 def load_translation_rules(csv_path: Path | None) -> List[Dict[str, str]]:
     if not csv_path or not csv_path.exists():
         return []
@@ -1150,6 +1172,11 @@ def run_refresh_thread(mode: str) -> None:
     config = load_config()
     display_mode = get_display_mode(config)
 
+    busy, busy_message = display_lock_busy(config)
+    if busy:
+        set_refresh_status_finished(f"{display_mode}:{mode}", "busy", busy_message)
+        return
+
     if display_mode == "recipe":
         python_path = path_from_value(cfg(config, "recipe_mode", "python_path"))
         script_path = path_from_value(cfg(config, "recipe_mode", "script_path"))
@@ -1208,6 +1235,8 @@ def run_refresh_thread(mode: str) -> None:
         with refresh_lock:
             refresh_status.last_return_code = "error"
             refresh_status.last_output += ("" if refresh_status.last_output.endswith("\n") or refresh_status.last_output == "" else "\n") + str(exc)
+    finally:
+        with refresh_lock:
             refresh_status.last_finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             refresh_status.running = False
 
@@ -1215,6 +1244,12 @@ def run_refresh_thread(mode: str) -> None:
 def run_deep_clean_display_thread() -> None:
     from datetime import datetime
     config = load_config()
+
+    busy, busy_message = display_lock_busy(config)
+    if busy:
+        set_refresh_status_finished("deep_clean_display", "busy", busy_message)
+        return
+
     python_path = path_from_value(cfg(config, "deep_clean_display", "python_path"))
     script_path = path_from_value(cfg(config, "deep_clean_display", "script_path"))
 
@@ -1274,6 +1309,10 @@ def run_deep_clean_display_thread() -> None:
 
 def restore_last_menu_image_to_display(config: configparser.ConfigParser) -> tuple[bool, str, int]:
     """Copy/display the last rendered menu image without running a new menu refresh."""
+    busy, busy_message = display_lock_busy(config)
+    if busy:
+        return False, busy_message, 409
+
     preview_path = path_from_value(cfg(config, "paths", "final_preview"))
     if not preview_path or not preview_path.exists():
         return False, "Last menu image not found. Run a normal refresh first.", 404
@@ -1303,7 +1342,19 @@ print(f"Restored image to display: {image_path}")
 print(f"Current display preview saved to: {current_preview_path}")
 """
 
+    lock_path = display_lock_path(config)
+    lock_file_created = False
     try:
+        if lock_path:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            except FileExistsError:
+                return False, f"Display is busy; lock file already exists: {lock_path}", 409
+            with os.fdopen(fd, "w") as lock_file:
+                lock_file.write(str(os.getpid()))
+            lock_file_created = True
+
         result = subprocess.run(
             [str(python_path), "-c", inline_code, str(preview_path), str(current_preview_path)],
             capture_output=True,
@@ -1315,6 +1366,9 @@ print(f"Current display preview saved to: {current_preview_path}")
         return False, "Timed out while restoring the last menu image.", 500
     except Exception as exc:
         return False, str(exc), 500
+    finally:
+        if lock_path and lock_file_created:
+            lock_path.unlink(missing_ok=True)
 
     output = ((result.stdout or "") + (result.stderr or "")).strip()
     if result.returncode != 0:
@@ -1342,6 +1396,12 @@ def run_refresh(mode: str):
         if refresh_status.running:
             flash("A refresh is already running.", "error")
             return redirect(url_for("index"))
+    config = load_config()
+    busy, busy_message = display_lock_busy(config)
+    if busy:
+        set_refresh_status_finished(mode, "busy", busy_message)
+        flash(busy_message, "error")
+        return redirect(url_for("index"))
     thread = threading.Thread(target=run_refresh_thread, args=(mode,), daemon=True)
     thread.start()
     flash(f"{mode.title()} refresh started.", "success")
@@ -1355,6 +1415,12 @@ def run_display_reset():
         if refresh_status.running:
             flash("A display action is already running.", "error")
             return redirect(url_for("index"))
+    config = load_config()
+    busy, busy_message = display_lock_busy(config)
+    if busy:
+        set_refresh_status_finished("deep_clean_display", "busy", busy_message)
+        flash(busy_message, "error")
+        return redirect(url_for("index"))
     thread = threading.Thread(target=run_deep_clean_display_thread, daemon=True)
     thread.start()
     flash("Deep clean display started.", "success")
@@ -1367,6 +1433,11 @@ def _start_refresh_if_idle(mode: str) -> tuple[bool, str]:
     with refresh_lock:
         if refresh_status.running:
             return False, "A refresh is already running."
+    config = load_config()
+    busy, busy_message = display_lock_busy(config)
+    if busy:
+        set_refresh_status_finished(mode, "busy", busy_message)
+        return False, busy_message
     thread = threading.Thread(target=run_refresh_thread, args=(mode,), daemon=True)
     thread.start()
     return True, f"{mode.title()} refresh started."

@@ -41,6 +41,9 @@ lock_file = None
 class ConfigError(Exception):
     pass
 
+class DisplayBusy(Exception):
+    pass
+
 def admin_error(message: str) -> ConfigError:
     return ConfigError(f"{message} Set this value in the admin UI and save settings.")
 
@@ -144,15 +147,36 @@ if RUNTIME.get("display_mode", "normal") != "normal":
     sys.exit(1)
 
 def acquire_lock():
+    """Create the configured display lock file before touching the e-ink display.
+
+    This intentionally treats an existing lock file as "display busy" and exits
+    cleanly instead of waiting. The file is removed in release_lock().
+    """
     global lock_file
-    lock_file = open(RUNTIME["lock_path"], "w")
+    lock_path = RUNTIME["lock_path"]
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        lock_file.write(str(os.getpid()))
-        lock_file.flush()
-    except BlockingIOError:
-        print("Another instance is already running. Exiting.")
-        sys.exit(0)
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        raise DisplayBusy(f"Display is busy; lock file already exists: {lock_path}")
+
+    lock_file = os.fdopen(fd, "w")
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+
+
+def release_lock():
+    global lock_file
+    lock_path = RUNTIME["lock_path"]
+    try:
+        if lock_file:
+            lock_file.close()
+    finally:
+        lock_file = None
+        try:
+            lock_path.unlink(missing_ok=True)
+        except Exception as exc:
+            print(f"Warning: could not remove display lock file {lock_path}: {exc}")
 
 def load_icon_rules(csv_path: Path):
     if not csv_path.exists():
@@ -431,17 +455,26 @@ def parse_args():
 
 def main():
     args = parse_args()
-    acquire_lock()
-    if args.full_refresh:
-        print("Running full refresh mode...")
-        run_full_refresh()
-    else:
-        print("Running smart refresh mode...")
-        run_smart_refresh()
+    lock_acquired = False
+    try:
+        acquire_lock()
+        lock_acquired = True
+        if args.full_refresh:
+            print("Running full refresh mode...")
+            run_full_refresh()
+        else:
+            print("Running smart refresh mode...")
+            run_smart_refresh()
+    finally:
+        if lock_acquired:
+            release_lock()
 
 if __name__ == "__main__":
     try:
         main()
+    except DisplayBusy as exc:
+        print(str(exc))
+        sys.exit(0)
     except ConfigError as exc:
         print(f"Configuration error: {exc}")
         sys.exit(2)
