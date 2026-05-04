@@ -1377,6 +1377,22 @@ print(f"Current display preview saved to: {current_preview_path}")
     return True, output or "Last menu image restored to display.", 200
 
 
+def return_to_normal_menu_mode(config: configparser.ConfigParser) -> tuple[bool, str, int]:
+    """Restore the last menu image and switch back to Normal Menu mode only after success."""
+    if get_display_mode(config) != "recipe":
+        return False, "Back to Menu is only available after a recipe has been rendered.", 400
+
+    ok, message, status_code = restore_last_menu_image_to_display(config)
+    if not ok:
+        return ok, message, status_code
+
+    if "general" not in config:
+        config["general"] = {}
+    config["general"]["display_mode"] = "normal"
+    save_config(config)
+    return True, message or "Returned to Normal Menu mode.", 200
+
+
 @app.route("/restore-last-menu-image", methods=["POST"])
 def restore_last_menu_image():
     config = load_config()
@@ -1385,6 +1401,42 @@ def restore_last_menu_image():
 
     ok, message, status_code = restore_last_menu_image_to_display(config)
     return jsonify({"ok": ok, "message" if ok else "error": message}), status_code
+
+
+@app.route("/back-to-menu", methods=["POST"])
+def back_to_menu():
+    from datetime import datetime
+
+    with refresh_lock:
+        if refresh_status.running:
+            return jsonify({
+                "ok": False,
+                "error": "A display action is already running.",
+                "display_mode": get_display_mode(load_config()),
+            }), 409
+
+        refresh_status.running = True
+        refresh_status.mode = "back_to_menu"
+        refresh_status.last_started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        refresh_status.last_finished = "Running"
+        refresh_status.last_return_code = "running"
+        refresh_status.last_output = "Restoring last menu image and returning to Normal Menu mode..."
+
+    config = load_config()
+    ok, message, status_code = return_to_normal_menu_mode(config)
+
+    with refresh_lock:
+        refresh_status.running = False
+        refresh_status.mode = "back_to_menu"
+        refresh_status.last_finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        refresh_status.last_return_code = "0" if ok else ("busy" if status_code == 409 else "error")
+        refresh_status.last_output = message
+
+    return jsonify({
+        "ok": ok,
+        "message" if ok else "error": message,
+        "display_mode": get_display_mode(load_config()),
+    }), status_code
 
 
 @app.route("/run-refresh/<mode>", methods=["POST"])
@@ -1642,23 +1694,11 @@ def mobile_render_recipe():
 @app.route("/mobile/normal-mode", methods=["POST"])
 def mobile_normal_mode():
     config = load_config()
-    if get_display_mode(config) != "recipe":
-        return jsonify({
-            "ok": False,
-            "error": "Back to Menu is only available after a recipe has been rendered.",
-            "display_mode": get_display_mode(config),
-        }), 400
-
-    if "general" not in config:
-        config["general"] = {}
-    config["general"]["display_mode"] = "normal"
-    save_config(config)
-
-    ok, message, status_code = restore_last_menu_image_to_display(config)
+    ok, message, status_code = return_to_normal_menu_mode(config)
     return jsonify({
         "ok": ok,
         "message" if ok else "error": message,
-        "display_mode": "normal",
+        "display_mode": get_display_mode(load_config()),
     }), status_code
 
 

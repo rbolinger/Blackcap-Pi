@@ -385,7 +385,11 @@
           <form action="{{ url_for('run_refresh', mode='recipe') }}" method="post">
             <button id="recipe-refresh-button" type="submit" {% if status.running %}disabled{% endif %}>Render Recipe</button>
           </form>
+          <form onsubmit="return false;">
+            <button type="button" id="back-to-menu-button" class="button-secondary" data-final-preview-exists="{{ 1 if final_preview_exists else 0 }}" onclick="backToMenuFromAdmin()" {% if status.running or display_mode != 'recipe' or not final_preview_exists %}disabled{% endif %}>Back to Menu</button>
+          </form>
         </div>
+        <span id="back-to-menu-status" class="subtle" aria-live="polite"></span>
 
         <hr>
         <p class="subtle">Occasional maintenance action for reducing e-ink ghosting.</p>
@@ -590,6 +594,12 @@
         restoreButton.disabled = mode !== "normal" || !hasFinalPreview;
       }
 
+      const backToMenuButton = document.getElementById("back-to-menu-button");
+      if (backToMenuButton) {
+        const hasFinalPreview = backToMenuButton.dataset.finalPreviewExists === "1";
+        backToMenuButton.disabled = mode !== "recipe" || !hasFinalPreview;
+      }
+
       if (banner) {
         if (mode === "recipe") {
           banner.className = "flash warning";
@@ -675,6 +685,55 @@
           button.dataset.finalPreviewExists = "1";
           button.disabled = getCurrentDisplayMode() !== "normal";
         }
+      }
+    }
+
+
+    async function backToMenuFromAdmin() {
+      const button = document.getElementById("back-to-menu-button");
+      const renderButton = document.getElementById("recipe-refresh-button");
+      const deepCleanButton = document.getElementById("deep-clean-button");
+      const status = document.getElementById("back-to-menu-status");
+      const modeStatus = document.getElementById("mode-save-status");
+
+      if (button) button.disabled = true;
+      if (renderButton) renderButton.disabled = true;
+      if (deepCleanButton) deepCleanButton.disabled = true;
+      if (status) status.textContent = "Returning to menu...";
+
+      try {
+        const response = await fetch("{{ url_for('back_to_menu') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({})
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "Could not return to the menu.");
+        }
+
+        const modeToggle = document.getElementById("display_mode_toggle");
+        const modeInput = document.getElementById("display_mode");
+        if (modeToggle) modeToggle.checked = false;
+        if (modeInput) modeInput.value = "normal";
+        toggleModeSections();
+
+        if (status) {
+          status.textContent = "Returned to menu.";
+          setTimeout(() => { status.textContent = ""; }, 3000);
+        }
+        if (modeStatus) {
+          modeStatus.textContent = "Normal menu restored.";
+          setTimeout(() => { modeStatus.textContent = ""; }, 3000);
+        }
+        refreshStatus();
+      } catch (err) {
+        console.error("Back to Menu failed", err);
+        if (status) status.textContent = "Back to Menu failed.";
+        alert(err.message || "Back to Menu failed.");
+      } finally {
+        refreshStatus();
       }
     }
 
@@ -981,10 +1040,15 @@
         const smartButton = document.getElementById("smart-refresh-button");
         const fullButton = document.getElementById("full-refresh-button");
         const recipeButton = document.getElementById("recipe-refresh-button");
+        const backToMenuButton = document.getElementById("back-to-menu-button");
         const deepCleanButton = document.getElementById("deep-clean-button");
         if (smartButton) smartButton.disabled = data.running;
         if (fullButton) fullButton.disabled = data.running;
         if (recipeButton) recipeButton.disabled = data.running;
+        if (backToMenuButton) {
+          backToMenuButton.dataset.finalPreviewExists = data.final_preview_exists ? "1" : "0";
+          backToMenuButton.disabled = data.running || data.display_mode !== "recipe" || !data.final_preview_exists;
+        }
         if (deepCleanButton) deepCleanButton.disabled = data.running;
         const restoreButton = document.getElementById("restore-last-menu-button");
         if (restoreButton) {
