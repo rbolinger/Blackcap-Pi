@@ -1605,6 +1605,15 @@ def mobile_render_recipe():
                 "display_mode": get_display_mode(config),
             }), 409
 
+    busy, busy_message = display_lock_busy(config)
+    if busy:
+        set_refresh_status_finished("recipe", "busy", busy_message)
+        return jsonify({
+            "ok": False,
+            "error": busy_message,
+            "display_mode": get_display_mode(config),
+        }), 409
+
     if "recipe_mode" not in config:
         config["recipe_mode"] = {}
     if "general" not in config:

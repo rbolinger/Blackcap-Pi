@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import configparser
-import fcntl
 import html
 import io
 import json
@@ -64,17 +63,35 @@ def require_path(config: configparser.ConfigParser, section: str, key: str, fall
 
 
 def acquire_lock(lock_path: Path) -> None:
+    """Create the configured display lock file before touching the e-ink display.
+
+    Match inky_menu.py behavior: an existing lock file means the display is busy,
+    so exit cleanly instead of waiting. release_lock() removes the file in a
+    finally block after the recipe render finishes or fails.
+    """
     global lock_file
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = open(lock_path, "a+")
     try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        raise RecipeModeError("Another Blackcap Pi display update is already running. Recipe update skipped.")
-    lock_file.seek(0)
-    lock_file.truncate()
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        raise RecipeModeError(f"Display is busy; lock file already exists: {lock_path}")
+
+    lock_file = os.fdopen(fd, "w")
     lock_file.write(str(os.getpid()))
     lock_file.flush()
+
+
+def release_lock(lock_path: Path) -> None:
+    global lock_file
+    try:
+        if lock_file:
+            lock_file.close()
+    finally:
+        lock_file = None
+        try:
+            lock_path.unlink(missing_ok=True)
+        except Exception as exc:
+            print(f"Warning: could not remove display lock file {lock_path}: {exc}")
 
 
 def find_font(configured: str, candidates: list[str]) -> str:
@@ -1113,14 +1130,16 @@ def main() -> None:
         print("Recipe cache build complete.")
         return
 
-    if not getattr(args, "cache_only", False):
-        acquire_lock(runtime["lock_path"])
-    img = render_selected_recipe(runtime, refresh_cache=args.refresh_cache, recipe_id=recipe_id)
-    img.save(runtime["recipe_preview_path"])
-    img.save(runtime["current_preview_path"])
-    print(f"Recipe preview saved to: {runtime['recipe_preview_path']}")
-    print(f"Current display preview saved to: {runtime['current_preview_path']}")
-    update_display(img, dry_run=args.dry_run)
+    acquire_lock(runtime["lock_path"])
+    try:
+        img = render_selected_recipe(runtime, refresh_cache=args.refresh_cache, recipe_id=recipe_id)
+        img.save(runtime["recipe_preview_path"])
+        img.save(runtime["current_preview_path"])
+        print(f"Recipe preview saved to: {runtime['recipe_preview_path']}")
+        print(f"Current display preview saved to: {runtime['current_preview_path']}")
+        update_display(img, dry_run=args.dry_run)
+    finally:
+        release_lock(runtime["lock_path"])
 
 
 if __name__ == "__main__":
