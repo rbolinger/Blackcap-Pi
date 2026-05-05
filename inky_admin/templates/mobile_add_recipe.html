@@ -69,10 +69,6 @@
           <button id="extractUrlButton" class="mini-button" type="button">🔎 Scan Photo for URL</button>
           <p class="hint">Photos are resized and compressed on your phone before upload. The full image is preserved; nothing is cropped.</p>
 
-          <div id="uploadProgress" class="progress-wrap" aria-live="polite">
-            <div id="progressLabel" class="progress-label">Preparing upload...</div>
-            <div class="progress-shell"><div id="progressBar" class="progress-bar"></div></div>
-          </div>
         </div>
 
         <div id="captureFields" style="display:none">
@@ -80,7 +76,11 @@
           <input id="photos" name="photos" type="file" accept="image/*" capture="environment" multiple>
           <div id="photoQueue" class="photo-queue">No photos selected yet.</div>
           <button id="clearPhotosButton" class="mini-button" type="button">Clear selected photos</button>
-          <p class="hint">Take or upload one or more photos. On phones, you can tap the picker multiple times; each selection is added to the batch and compiled into one recipe PDF.</p>
+          <p class="hint">Take or upload one or more photos. Recipe photos are uploaded at full detail for better OCR. On phones, you can tap the picker multiple times; each selection is added to the batch and compiled into one recipe PDF.</p>
+        </div>
+        <div id="uploadProgress" class="progress-wrap" aria-live="polite">
+          <div id="progressLabel" class="progress-label">Preparing upload...</div>
+          <div class="progress-shell"><div id="progressBar" class="progress-bar"></div></div>
         </div>
 
         <label for="name">Title / Name</label>
@@ -210,6 +210,8 @@
       extractUrlButton.disabled = isBusy;
       submitButton.disabled = isBusy;
       urlPhotosInput.disabled = isBusy;
+      photosInput.disabled = isBusy;
+      document.getElementById('clearPhotosButton').disabled = isBusy;
       document.getElementById('urlTab').disabled = isBusy;
       document.getElementById('captureTab').disabled = isBusy;
     }
@@ -344,7 +346,7 @@
       });
     }
 
-    async function compressImageForUpload(file) {
+    async function compressImageForUpload(file, fallbackName = 'photo') {
       if (!file || !file.type || !file.type.startsWith('image/')) return file;
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -365,7 +367,7 @@
               resolve(file);
               return;
             }
-            const baseName = (file.name || 'url_scan').replace(/\.[^.]+$/, '');
+            const baseName = (file.name || fallbackName).replace(/\.[^.]+$/, '');
             resolve(new File([blob], `${baseName}_compressed.jpg`, { type: 'image/jpeg' }));
           };
           img.src = reader.result;
@@ -374,31 +376,42 @@
       });
     }
 
-    function uploadWithProgress(formData) {
+    function uploadWithProgress(formData, options = {}) {
+      const url = options.url || '{{ url_for('mobile_extract_url_from_photo') }}';
+      const uploadMessage = options.uploadMessage || 'Uploading image...';
+      const processingMessage = options.processingMessage || 'Processing upload...';
+      const unknownProgress = Number.isFinite(options.unknownProgress) ? options.unknownProgress : 35;
+      const uploadStart = Number.isFinite(options.uploadStart) ? options.uploadStart : 0;
+      const uploadRange = Number.isFinite(options.uploadRange) ? options.uploadRange : 80;
+      const processingPercent = Number.isFinite(options.processingPercent) ? options.processingPercent : 90;
+      const networkError = options.networkError || 'The upload was interrupted before Blackcap Pi could process the image.';
+      const timeoutError = options.timeoutError || 'The upload timed out before Blackcap Pi could process the image.';
+      const defaultError = options.defaultError || 'Upload failed.';
+
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '{{ url_for('mobile_extract_url_from_photo') }}');
+        xhr.open('POST', url);
         xhr.responseType = 'json';
 
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) {
-            setProgress('Uploading image...', 35);
+            setProgress(uploadMessage, unknownProgress);
             return;
           }
-          const uploadPercent = Math.round((event.loaded / event.total) * 80);
-          setProgress('Uploading image...', uploadPercent);
+          const uploadPercent = uploadStart + Math.round((event.loaded / event.total) * uploadRange);
+          setProgress(uploadMessage, uploadPercent);
         };
         xhr.upload.onload = () => {
-          setProgress('Scanning for URL...', 90);
-          showToast('Scanning for URL...');
+          setProgress(processingMessage, processingPercent);
+          showToast(processingMessage);
         };
 
-        xhr.onerror = () => reject(new Error('The upload was interrupted before Blackcap Pi could scan the image.'));
-        xhr.ontimeout = () => reject(new Error('The upload timed out before Blackcap Pi could scan the image.'));
+        xhr.onerror = () => reject(new Error(networkError));
+        xhr.ontimeout = () => reject(new Error(timeoutError));
         xhr.onload = () => {
           const data = xhr.response || {};
           if (xhr.status < 200 || xhr.status >= 300 || !data.ok) {
-            reject(new Error(data.error || 'No URL found.'));
+            reject(new Error(data.error || data.message || defaultError));
             return;
           }
           resolve(data);
@@ -423,12 +436,23 @@
         const formData = new FormData();
         for (const [index, file] of files.entries()) {
           setProgress(`Compressing image ${index + 1} of ${files.length}...`, 5 + Math.round((index / files.length) * 20));
-          const compressed = await compressImageForUpload(file);
+          const compressed = await compressImageForUpload(file, 'url_scan');
           formData.append('url_photos', compressed);
         }
         setProgress('Uploading image...', 30);
         showToast('Uploading image...');
-        const data = await uploadWithProgress(formData);
+        const data = await uploadWithProgress(formData, {
+          url: '{{ url_for('mobile_extract_url_from_photo') }}',
+          uploadMessage: 'Uploading image...',
+          processingMessage: 'Scanning for URL...',
+          unknownProgress: 35,
+          uploadStart: 0,
+          uploadRange: 80,
+          processingPercent: 90,
+          networkError: 'The upload was interrupted before Blackcap Pi could scan the image.',
+          timeoutError: 'The upload timed out before Blackcap Pi could scan the image.',
+          defaultError: 'No URL found.',
+        });
         setProgress('Scanning for URL...', 92);
         showToast('Scanning for URL...');
         urlInput.value = data.url || '';
@@ -447,32 +471,69 @@
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      submitButton.disabled = true;
+      const previousMethod = addMethod.value || 'url';
+      setBusy(true);
       successActions.style.display = 'none';
-      showToast('Saving recipe and queuing cache build...');
+      showToast(previousMethod === 'capture' ? 'Preparing recipe photos...' : 'Saving recipe and queuing cache build...');
       try {
-        if (addMethod.value === 'capture' && selectedPhotoFiles.length === 0) {
+        if (previousMethod === 'capture' && selectedPhotoFiles.length === 0) {
           throw new Error('Add at least one recipe photo.');
         }
-        syncPhotoInput();
-        const formData = new FormData(form);
-        const response = await fetch('{{ url_for('mobile_add_recipe_submit') }}', { method: 'POST', body: formData });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) throw new Error(data.error || data.message || 'Could not add recipe.');
+
+        let data;
+        if (previousMethod === 'capture') {
+          await requestWakeLock();
+          setProgress('Preparing full-detail recipe photos...', 5);
+          showToast('Preparing full-detail recipe photos...');
+
+          const formData = new FormData(form);
+          formData.delete('photos');
+          for (const [index, file] of selectedPhotoFiles.entries()) {
+            const percent = 5 + Math.round((index / selectedPhotoFiles.length) * 10);
+            setProgress(`Preparing recipe photo ${index + 1} of ${selectedPhotoFiles.length}...`, percent);
+            formData.append('photos', file);
+          }
+
+          setProgress('Uploading full-detail recipe photos...', 18);
+          showToast('Uploading full-detail recipe photos...');
+          data = await uploadWithProgress(formData, {
+            url: '{{ url_for('mobile_add_recipe_submit') }}',
+            uploadMessage: 'Uploading full-detail recipe photos...',
+            processingMessage: 'Upload received. Queuing background OCR and PDF build...',
+            unknownProgress: 35,
+            uploadStart: 15,
+            uploadRange: 70,
+            processingPercent: 92,
+            networkError: 'The upload was interrupted before Blackcap Pi could save the recipe photos.',
+            timeoutError: 'The upload timed out before Blackcap Pi could save the recipe photos.',
+            defaultError: 'Could not add recipe.',
+          });
+          setProgress('Recipe saved', 100);
+        } else {
+          const formData = new FormData(form);
+          const response = await fetch('{{ url_for('mobile_add_recipe_submit') }}', { method: 'POST', body: formData });
+          data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) throw new Error(data.error || data.message || 'Could not add recipe.');
+        }
+
         newRecipeId = data.recipe?.id || '';
-        showToast(data.cache_message || 'Recipe saved and cache build queued.');
+        showToast(data.cache_message || 'Recipe photos uploaded. OCR and recipe PDF build are running in the background.');
         successActions.style.display = newRecipeId ? 'grid' : 'none';
         renderNewButton.disabled = true;
         if (newRecipeId) startCachePolling();
-        const previousMethod = addMethod.value || 'url';
         form.reset();
         selectedPhotoFiles = [];
         syncPhotoInput();
         setMethod(previousMethod);
       } catch (err) {
+        if (previousMethod === 'capture') setProgress('Upload failed', 100);
         showToast(err.message, true);
       } finally {
-        submitButton.disabled = false;
+        if (previousMethod === 'capture') {
+          window.setTimeout(hideProgress, 1400);
+          await releaseWakeLock();
+        }
+        setBusy(false);
       }
     });
 

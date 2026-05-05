@@ -316,6 +316,11 @@ def update_recipe_cache_metadata(
             item["cached_source"] = source
             item["cached_layout"] = layout
             item["cache_last_checked_at"] = now
+            item["cache_build_status"] = "ready"
+            item["cache_build_message"] = "Recipe cache created."
+            item["cache_build_finished_at"] = now
+            if not str(item.get("cache_build_started_at", "")).strip():
+                item["cache_build_started_at"] = now
             if rendered_png_path is not None:
                 item["cached_rendered_image_path"] = str(rendered_png_path)
                 item["cached_png_path"] = str(rendered_png_path)
@@ -1124,9 +1129,19 @@ def main() -> None:
     recipe_id = args.recipe_id.strip() or None
 
     if args.cache_only:
-        render_selected_recipe(runtime, refresh_cache=True, recipe_id=recipe_id)
+        active_recipe_id = recipe_id or runtime["selected_recipe_id"]
+        if active_recipe_id:
+            set_recipe_cache_build_status(runtime["repo_path"], active_recipe_id, "building", "Recipe cache build running.", preserve_started_at=True)
+        try:
+            render_selected_recipe(runtime, refresh_cache=True, recipe_id=recipe_id)
+        except Exception as exc:
+            if active_recipe_id:
+                set_recipe_cache_build_status(runtime["repo_path"], active_recipe_id, "error", str(exc), preserve_started_at=True)
+            raise
         # The call above writes the cached PDF and JSON metadata. Do not touch the display
         # or the shared preview images when this is launched from the admin add-recipe flow.
+        if active_recipe_id:
+            set_recipe_cache_build_status(runtime["repo_path"], active_recipe_id, "ready", "Recipe cache build complete.", preserve_started_at=True)
         print("Recipe cache build complete.")
         return
 

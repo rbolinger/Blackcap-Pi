@@ -186,6 +186,43 @@ def save_recipe_repo(config: configparser.ConfigParser, repo: dict) -> None:
         f.write("\n")
 
 
+def utc_now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def set_recipe_cache_build_status(
+    config: configparser.ConfigParser,
+    recipe_id: str,
+    status: str,
+    message: str = "",
+    *,
+    preserve_started_at: bool = False,
+) -> None:
+    repo = load_recipe_repo(config)
+    now = utc_now_iso()
+    changed = False
+    for item in repo.get("recipes", []):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id", "")).strip() != recipe_id:
+            continue
+        item["cache_build_status"] = status
+        item["cache_build_message"] = message
+        if status in {"pending", "building"}:
+            if not preserve_started_at or not str(item.get("cache_build_started_at", "")).strip():
+                item["cache_build_started_at"] = now
+            item["cache_build_finished_at"] = ""
+        elif status in {"ready", "error", "skipped"}:
+            item["cache_build_finished_at"] = now
+            if not str(item.get("cache_build_started_at", "")).strip():
+                item["cache_build_started_at"] = now
+        changed = True
+        break
+    if changed:
+        save_recipe_repo(config, repo)
+
+
 def configured_api_token(config: configparser.ConfigParser) -> str:
     return cfg(config, "api", "extension_token").strip()
 
@@ -245,8 +282,16 @@ def add_or_update_recipe_from_payload(config: configparser.ConfigParser, payload
                 preserved = dict(item)
                 preserved.update(recipe)
                 preserved["id"] = requested_id
-                for extra_key in ["capture_dir", "source_image_paths", "ocr_text_path", "recipe_model_path"]:
-                    if extra_key in item and extra_key not in recipe:
+                preserve_keys = [
+                    "capture_dir", "source_image_paths", "ocr_text_path", "recipe_model_path",
+                    "cached_file_path", "cached_pdf_path", "cached_file_written_at", "cached_file_type",
+                    "cached_source_url", "cached_source", "cached_layout", "cache_last_checked_at",
+                    "cached_rendered_image_path", "cached_png_path", "cached_png_written_at",
+                    "recipe_image_path", "dish_image_path", "recipe_image_written_at", "recipe_image_source_url",
+                    "cache_build_status", "cache_build_message", "cache_build_started_at", "cache_build_finished_at",
+                ]
+                for extra_key in preserve_keys:
+                    if extra_key in item and (extra_key not in recipe or not recipe.get(extra_key)):
                         preserved[extra_key] = item.get(extra_key)
                     if extra_key in payload:
                         preserved[extra_key] = payload.get(extra_key)
@@ -320,13 +365,31 @@ def normalize_recipe_record(recipe: dict) -> dict:
         "source_image_paths": recipe.get("source_image_paths") or [],
         "ocr_text_path": str(recipe.get("ocr_text_path") or "").strip(),
         "recipe_model_path": str(recipe.get("recipe_model_path") or "").strip(),
+        "cache_build_status": str(recipe.get("cache_build_status") or "").strip().lower(),
+        "cache_build_message": str(recipe.get("cache_build_message") or "").strip(),
+        "cache_build_started_at": str(recipe.get("cache_build_started_at") or "").strip(),
+        "cache_build_finished_at": str(recipe.get("cache_build_finished_at") or "").strip(),
     }
 
 
-def list_recipes(config: configparser.ConfigParser) -> list[dict]:
+def list_all_recipes(config: configparser.ConfigParser) -> list[dict]:
     repo = load_recipe_repo(config)
     recipes = [normalize_recipe_record(r) for r in repo.get("recipes", []) if isinstance(r, dict)]
     return sorted(recipes, key=lambda r: r["name"].lower())
+
+
+def recipe_has_ready_cache(recipe: dict | None) -> bool:
+    if not recipe:
+        return False
+    pdf_path = recipe_pdf_path_for_record(recipe)
+    return bool(pdf_path and pdf_path.exists() and pdf_path.is_file())
+
+
+def list_recipes(config: configparser.ConfigParser, *, ready_only: bool = True) -> list[dict]:
+    recipes = list_all_recipes(config)
+    if ready_only:
+        recipes = [r for r in recipes if recipe_has_ready_cache(r)]
+    return recipes
 
 
 def get_selected_recipe(config: configparser.ConfigParser) -> dict | None:
@@ -381,8 +444,19 @@ def recipe_pdf_path_for_record(recipe: dict | None) -> Path | None:
 def recipe_cache_status_for_record(recipe: dict | None) -> dict:
     pdf_path = recipe_pdf_path_for_record(recipe)
     ready = bool(pdf_path and pdf_path.exists() and pdf_path.is_file())
+    status = str((recipe or {}).get("cache_build_status") or "").strip().lower()
+    if ready:
+        effective_status = "ready"
+    elif status:
+        effective_status = status
+    else:
+        effective_status = "not_built"
     return {
         "ready": ready,
+        "status": effective_status,
+        "message": str((recipe or {}).get("cache_build_message") or ""),
+        "started_at": str((recipe or {}).get("cache_build_started_at") or ""),
+        "finished_at": str((recipe or {}).get("cache_build_finished_at") or ""),
         "cached_pdf_path": str(pdf_path) if pdf_path else "",
         "cached_file_written_at": str((recipe or {}).get("cached_file_written_at") or ""),
     }
@@ -418,17 +492,26 @@ def make_unique_recipe_id(recipes: list[dict], preferred_id: str) -> str:
 
 def build_recipe_cache(config: configparser.ConfigParser, recipe_id: str) -> tuple[bool, str]:
     """Pre-render and cache a recipe PDF without changing display mode or touching the display."""
+    set_recipe_cache_build_status(config, recipe_id, "building", "Recipe cache build started.")
     python_path = path_from_value(cfg(config, "recipe_mode", "python_path"))
     script_path = path_from_value(cfg(config, "recipe_mode", "script_path"))
 
     if not python_path:
-        return False, "Recipe Python Path is not set; recipe was saved but cache was not created."
+        msg = "Recipe Python Path is not set; recipe was saved but cache was not created."
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
     if not script_path:
-        return False, "Recipe Script Path is not set; recipe was saved but cache was not created."
+        msg = "Recipe Script Path is not set; recipe was saved but cache was not created."
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
     if not python_path.exists():
-        return False, f"Recipe Python Path does not exist: {python_path}"
+        msg = f"Recipe Python Path does not exist: {python_path}"
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
     if not script_path.exists():
-        return False, f"Recipe Script Path does not exist: {script_path}"
+        msg = f"Recipe Script Path does not exist: {script_path}"
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
 
     env = os.environ.copy()
     env["INKY_CONFIG_PATH"] = str(CONFIG_PATH)
@@ -443,31 +526,48 @@ def build_recipe_cache(config: configparser.ConfigParser, recipe_id: str) -> tup
             env=env,
         )
     except subprocess.TimeoutExpired:
-        return False, "Recipe was saved, but cache generation timed out."
+        msg = "Recipe was saved, but cache generation timed out."
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
     except Exception as exc:
-        return False, f"Recipe was saved, but cache generation failed: {exc}"
+        msg = f"Recipe was saved, but cache generation failed: {exc}"
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
 
     output = ((result.stdout or "") + (result.stderr or "")).strip()
     if result.returncode != 0:
-        return False, output or f"Recipe was saved, but cache generation failed with return code {result.returncode}."
+        msg = output or f"Recipe was saved, but cache generation failed with return code {result.returncode}."
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
 
-    return True, output or "Recipe cache created."
+    msg = output or "Recipe cache created."
+    set_recipe_cache_build_status(config, recipe_id, "ready", msg, preserve_started_at=True)
+    return True, msg
 
 
 
 def start_recipe_cache_build(config: configparser.ConfigParser, recipe_id: str) -> tuple[bool, str]:
     """Launch a recipe cache build in the background and return immediately."""
+    set_recipe_cache_build_status(config, recipe_id, "building", "Recipe cache build queued.")
     python_path = path_from_value(cfg(config, "recipe_mode", "python_path"))
     script_path = path_from_value(cfg(config, "recipe_mode", "script_path"))
 
     if not python_path:
-        return False, "Recipe Python Path is not set; cache build was not queued."
+        msg = "Recipe Python Path is not set; cache build was not queued."
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
     if not script_path:
-        return False, "Recipe Script Path is not set; cache build was not queued."
+        msg = "Recipe Script Path is not set; cache build was not queued."
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
     if not python_path.exists():
-        return False, f"Recipe Python Path does not exist: {python_path}"
+        msg = f"Recipe Python Path does not exist: {python_path}"
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
     if not script_path.exists():
-        return False, f"Recipe Script Path does not exist: {script_path}"
+        msg = f"Recipe Script Path does not exist: {script_path}"
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
 
     env = os.environ.copy()
     env["INKY_CONFIG_PATH"] = str(CONFIG_PATH)
@@ -482,7 +582,9 @@ def start_recipe_cache_build(config: configparser.ConfigParser, recipe_id: str) 
             start_new_session=True,
         )
     except Exception as exc:
-        return False, f"Recipe was saved, but async cache build could not be started: {exc}"
+        msg = f"Recipe was saved, but async cache build could not be started: {exc}"
+        set_recipe_cache_build_status(config, recipe_id, "error", msg, preserve_started_at=True)
+        return False, msg
 
     return True, f"Recipe cache build started in background. PID: {proc.pid}"
 
@@ -637,7 +739,11 @@ def create_capture_recipe_from_upload(config: configparser.ConfigParser, form, f
     manifest = save_capture_images(files, cache_dir, recipe_id)
     capture_dir = str(manifest.get("capture_dir", ""))
     source_images = manifest.get("source_image_paths", [])
-    preview_image_path = save_capture_recipe_image(manifest, cache_dir, recipe_id)
+    # Keep the mobile photo-capture request lightweight: after the upload is saved,
+    # OCR, dish-thumbnail detection, and PDF/image cache generation should happen in
+    # the background cache process. Running save_capture_recipe_image() here can call
+    # OCR helpers and make the user wait after the upload has already completed.
+    preview_image_path = None
 
     recipe = normalize_recipe_record({
         "id": recipe_id,
@@ -654,12 +760,18 @@ def create_capture_recipe_from_upload(config: configparser.ConfigParser, form, f
         "recipe_model_path": str(Path(capture_dir) / "recipe_model.json"),
         "recipe_image_path": str(preview_image_path or ""),
         "dish_image_path": str(preview_image_path or ""),
+        "cache_build_status": "pending",
+        "cache_build_message": "Recipe photos uploaded; waiting for background OCR and PDF build.",
+        "cache_build_started_at": utc_now_iso(),
+        "cache_build_finished_at": "",
     })
     raw_recipes.append(recipe)
     repo["recipes"] = raw_recipes
     save_recipe_repo(config, repo)
 
     cache_ok, cache_message = start_recipe_cache_build(config, recipe_id)
+    if cache_ok:
+        cache_message = "Recipe photos uploaded. OCR and recipe PDF build are running in the background."
     repo_after_cache = load_recipe_repo(config)
     saved_recipe = next(
         (normalize_recipe_record(r) for r in repo_after_cache.get("recipes", []) if isinstance(r, dict) and str(r.get("id", "")) == recipe_id),
@@ -907,6 +1019,7 @@ def recipes_api():
         if recipe_type and recipe.get("recipe_type", "").lower() != recipe_type:
             continue
         recipe["recipe_image_url"] = recipe_image_url_for_record(recipe)
+        recipe["cache_status"] = recipe_cache_status_for_record(recipe)
         filtered.append(recipe)
 
     return jsonify({"ok": True, "recipes": filtered})
@@ -1498,7 +1611,7 @@ def _start_refresh_if_idle(mode: str) -> tuple[bool, str]:
 @app.route("/api/recipes/<recipe_id>/cache-status", methods=["GET"])
 def recipe_cache_status_api(recipe_id: str):
     config = load_config()
-    recipe = next((r for r in list_recipes(config) if r["id"] == recipe_id), None)
+    recipe = next((r for r in list_all_recipes(config) if r["id"] == recipe_id), None)
     if not recipe:
         return jsonify({"ok": False, "error": "Recipe not found."}), 404
     status = recipe_cache_status_for_record(recipe)
@@ -1506,6 +1619,10 @@ def recipe_cache_status_api(recipe_id: str):
         "ok": True,
         "recipe_id": recipe_id,
         "ready": status["ready"],
+        "status": status["status"],
+        "message": status["message"],
+        "started_at": status["started_at"],
+        "finished_at": status["finished_at"],
         "cached_pdf_path": status["cached_pdf_path"],
         "cached_file_written_at": status["cached_file_written_at"],
         "recipe_image_url": recipe_image_url_for_record(recipe),
@@ -1604,6 +1721,8 @@ def mobile_add_recipe_submit():
         "cache_queued": bool(cache_ok),
         "cache_message": cache_message,
         "cache_ready": cache_status["ready"],
+        "cache_status": cache_status["status"],
+        "cache_status_message": cache_status["message"],
         "cached_pdf_path": cache_status["cached_pdf_path"],
         "recipe_image_url": recipe_image_url_for_record(saved_recipe),
     })

@@ -91,9 +91,11 @@ def save_capture_images(files: Iterable[Any], recipe_cache_dir: Path, recipe_id:
                 img = ImageOps.exif_transpose(img)
                 if img.mode not in {"RGB", "L"}:
                     img = img.convert("RGB")
-                img.thumbnail((2400, 2400), Image.LANCZOS)
+                # Preserve as much image detail as practical for OCR. Do not downscale
+                # recipe-card photos during upload; the background cache process can
+                # decide how to render/fit the OCR output later.
                 normalized_path = target_dir / f"image_{index:03d}.jpg"
-                img.convert("RGB").save(normalized_path, format="JPEG", quality=92)
+                img.convert("RGB").save(normalized_path, format="JPEG", quality=95)
             if raw_path != normalized_path:
                 raw_path.unlink(missing_ok=True)
             saved_paths.append(str(normalized_path))
@@ -1254,41 +1256,134 @@ def _looks_like_numbered_step(value: str) -> bool:
     return bool(re.match(r"^(?:\d+\s*[\).:-]|step\s+\d+\s*[:.)-]?)\s*", value, flags=re.I))
 
 
-def _repair_fraction_ocr(value: str) -> str:
-    value = str(value or "")
+RECIPE_UNIT_PATTERN = (
+    r"cup|cups|c\.?|teaspoon|teaspoons|tsp\.?|tablespoon|tablespoons|tbsp\.?|"
+    r"ounce|ounces|oz\.?|pound|pounds|lb\.?|lbs\.?|gram|grams|g|kg|kilogram|kilograms|"
+    r"milliliter|milliliters|ml|mL|liter|liters|l|L|"
+    r"stick|sticks|pinch|pinches|dash|dashes|can|cans|package|packages|pkg\.?|"
+    r"clove|cloves|slice|slices|sprig|sprigs"
+)
+RECIPE_UNIT_RE = re.compile(rf"\b(?:{RECIPE_UNIT_PATTERN})\b", re.I)
+NUMERIC_CONTEXT_RE = re.compile(r"(?:\d|[¼½¾⅓⅔⅛⅜⅝⅞]|\b(?:one|two|three|four|half|quarter)\b)", re.I)
+PERCENT_WITH_RECIPE_UNIT_RE = re.compile(
+    rf"(?P<prefix>^|[^\w/])(?P<whole>\d+)?\s*%\s+(?P<unit>{RECIPE_UNIT_PATTERN})\b",
+    re.I,
+)
+PERCENT_BLOCKLIST_RE = re.compile(
+    r"\b(?:percent|percentage|nutrition|daily value|dv|reduced|discount|sale|off|proof|abv|alcohol|"
+    r"fat|sodium|cholesterol|carbohydrate|protein)\b",
+    re.I,
+)
+UNICODE_FRACTIONS = {
+    "¼": "1/4", "½": "1/2", "¾": "3/4",
+    "⅓": "1/3", "⅔": "2/3",
+    "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
+}
 
-    unicode_fractions = {
-        "¼": "1/4", "½": "1/2", "¾": "3/4",
-        "⅓": "1/3", "⅔": "2/3",
-        "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
-    }
-    for src, dst in unicode_fractions.items():
+
+def _log_percent_cleanup(original: str, updated: str, *, reason: str) -> None:
+    if "%" not in original:
+        return
+    if original != updated:
+        LOGGER.info('[OCR CLEANUP] Converted suspicious %% in recipe text: %r -> %r (%s)', original, updated, reason)
+    else:
+        LOGGER.info('[OCR CLEANUP] Left suspicious %% unchanged in recipe text: %r (%s)', original, reason)
+
+
+def _normalize_unicode_fractions(value: str) -> str:
+    for src, dst in UNICODE_FRACTIONS.items():
+        # Keep mixed numbers readable: "1½" -> "1 1/2".
+        value = re.sub(rf"(?<=\d){re.escape(src)}", f" {dst}", value)
         value = value.replace(src, dst)
+    return value
+
+
+def _repair_percent_fraction_ocr_line(line: str) -> str:
+    """Repair OCR percent signs only when the surrounding text looks like a recipe amount.
+
+    Tesseract commonly reads the ¾ glyph/fraction as %. We still keep this conservative:
+    values such as "50% reduced fat" or URL-like text are left alone, while values such as
+    "% cup" and "1 % cups" are converted because a recipe unit immediately follows.
+    """
+    original = str(line or "")
+    if "%" not in original:
+        return original
+
+    if re.search(r"https?://|www\.|\b\w+\.com\b", original, flags=re.I):
+        _log_percent_cleanup(original, original, reason="URL-like text")
+        return original
+
+    if PERCENT_BLOCKLIST_RE.search(original):
+        _log_percent_cleanup(original, original, reason="percent appears to be literal/nutrition text")
+        return original
+
+    def replace_percent(match: re.Match[str]) -> str:
+        whole = match.group("whole") or ""
+        unit = match.group("unit") or ""
+        prefix = match.group("prefix") or ""
+        before = original[:match.start()]
+
+        # Do not rewrite normal numeric percentages like "50%". A whole number followed by
+        # a space before % is treated as a mixed recipe quantity: "1 % cups" -> "1 3/4 cups".
+        matched_text = match.group(0)
+        if whole and re.search(rf"\b{re.escape(whole)}%", matched_text):
+            return matched_text
+
+        # Require recipe-like context: a unit right after %, or a number/fraction before it.
+        has_recipe_context = bool(unit) or bool(NUMERIC_CONTEXT_RE.search(before[-16:]))
+        if not has_recipe_context:
+            return matched_text
+
+        replacement_amount = f"{whole} 3/4" if whole else "3/4"
+        return f"{prefix}{replacement_amount} {unit}"
+
+    updated = PERCENT_WITH_RECIPE_UNIT_RE.sub(replace_percent, original)
+
+    if "%" in updated:
+        # Handle spaced forms that the first regex intentionally avoided, but only when
+        # the percent mark is isolated and a unit is still close by: "1  %  cup".
+        updated = re.sub(
+            rf"(?<!\d)(?P<prefix>^|\s)%\s+(?P<unit>{RECIPE_UNIT_PATTERN})\b",
+            lambda m: f"{m.group('prefix')}3/4 {m.group('unit')}",
+            updated,
+            flags=re.I,
+        )
+
+    if "%" in updated:
+        _log_percent_cleanup(original, updated, reason="no safe recipe-unit conversion found")
+    else:
+        _log_percent_cleanup(original, updated, reason="near recipe quantity/unit; interpreted as 3/4")
+    return updated
+
+
+def _repair_fraction_ocr_line(line: str) -> str:
+    value = str(line or "")
+    value = _normalize_unicode_fractions(value)
 
     # Normalize common OCR characters used where the numerator 1 was intended.
     value = re.sub(r"\b[Il|]\s*/\s*([2348])\b", r"1/\1", value)
     value = re.sub(r"\b(\d+)\s+[Il|]\s*/\s*([2348])\b", r"\1 1/\2", value)
 
-    # Normalize spaced simple fractions and mixed numbers.
+    # Normalize spaced simple fractions and mixed numbers without touching decimals.
     value = re.sub(r"\b([1-7])\s*/\s*([2-8])\b", r"\1/\2", value)
     value = re.sub(r"\b(\d+)\s+([1-7])\s*/\s*([2-8])\b", r"\1 \2/\3", value)
 
-    # Tesseract sometimes sees the ¾ glyph as %. This is inherently ambiguous if OCR only
-    # returns "1 %"; the extra OCR passes above try hard to avoid that. As a final fallback,
-    # only convert a lone % when it appears exactly where a recipe fraction normally appears.
-    units = (
-        r"cup|cups|c\.?|tsp|teaspoon|teaspoons|tbsp|tablespoon|tablespoons|"
-        r"oz|ounce|ounces|lb|pound|pounds|g|gram|grams|kg|ml|mL|l|L|"
-        r"stick|sticks|pinch|pinches|dash|dashes"
-    )
-    value = re.sub(rf"\b(\d+)\s+%\s+(?=({units})\b)", r"\1 3/4 ", value, flags=re.I)
-    value = re.sub(rf"(?<!\d)(?:^|\s)%\s+(?=({units})\b)", " 3/4 ", value, flags=re.I)
+    value = _repair_percent_fraction_ocr_line(value)
 
     # Clean OCR punctuation around fractions: "1.1/2" -> "1 1/2" when followed by a unit.
-    value = re.sub(rf"\b(\d+)\.([1-7]/[2-8])\s+(?=({units})\b)", r"\1 \2 ", value, flags=re.I)
+    value = re.sub(rf"\b(\d+)\.([1-7]/[2-8])\s+(?=({RECIPE_UNIT_PATTERN})\b)", r"\1 \2 ", value, flags=re.I)
 
-    value = re.sub(r"\s+", " ", value).strip()
+    # Keep valid decimals intact, but fix obvious OCR comma decimals in quantities: "1,5 cups".
+    value = re.sub(rf"\b(\d+),(\d+)\s+(?=({RECIPE_UNIT_PATTERN})\b)", r"\1.\2 ", value, flags=re.I)
+
+    value = re.sub(r"[ \t]+", " ", value).strip()
     return value
+
+
+def _repair_fraction_ocr(value: str) -> str:
+    # Preserve line breaks for recipe parsing; only normalize each OCR line independently.
+    lines = str(value or "").splitlines()
+    return "\n".join(_repair_fraction_ocr_line(line) for line in lines)
 
 def clean_recipe_line(value: str) -> str:
     value = _strip_ocr_prefix(value)
