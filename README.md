@@ -80,10 +80,21 @@ Control the display in real time from your phone or tablet:
 
 * Python (Flask-based admin + services)
 * Beautiful Soup (HTML parsing)
-* Playwright (for stubborn JS-heavy sites)
+* Playwright (JS-heavy site fallback)
 * PIL / Pillow (image processing)
-* Raspberry Pi (Zero 2 W works great)
-* Waveshare 13.3" e-ink display
+* pytesseract (OCR)
+* OpenCV + pyzbar (QR + image processing)
+
+---
+
+## 🖨 Hardware
+
+Blackcap Pi is designed to run comfortably on low-power Raspberry Pi hardware.
+
+* Raspberry Pi Zero 2 W
+* Waveshare 13.3" e-ink display (epd13in3k)
+* MicroSD card (16GB+ recommended)
+* Custom 3D-printed case (Instructables coming 👀)
 
 ---
 
@@ -613,14 +624,6 @@ Blackcap Pi tries multiple approaches:
 2. Beautiful Soup scraping
 3. Playwright fallback (for JS-heavy sites)
 4. Image extraction + caching
-
----
-
-## 🖨 Hardware
-
-* Raspberry Pi Zero 2 W
-* Waveshare 13.3" e-ink
-* Custom 3D-printed case (Instructables coming 👀)
 
 ---
 
