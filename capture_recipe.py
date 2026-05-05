@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,6 +19,11 @@ try:
 except Exception:  # Optional dependency; thumbnail extraction falls back to the full image.
     cv2 = None
     np = None
+
+try:
+    from pyzbar.pyzbar import decode as pyzbar_decode
+except Exception:  # Optional dependency; QR extraction still falls back to OpenCV/OCR.
+    pyzbar_decode = None
 
 try:
     import pytesseract
@@ -504,8 +510,17 @@ def _clean_url_candidate(value: str) -> str:
     url = re.sub(r"\s+", "", url)
     url = url.replace("https;//", "https://").replace("http;//", "http://")
     url = url.replace("https:ll", "https://").replace("http:ll", "http://")
+    url = re.sub(r"(?i)biggerbolderbakina", "biggerbolderbaking", url)
     url = re.sub(r"(?i)wprm_prin[uv]\b", "wprm_print", url)
     url = re.sub(r"(?i)wprm_prin[uv](?=[/-])", "wprm_print", url)
+    # Common footer OCR errors: wprm_print is often read as worm/orint,
+    # wprr/orint, or similar when the printed footer is small.
+    url = re.sub(r"(?i)/(?:wprm|wprr|worm|worn|wor)[,._-]?(?:print|printh|orint|drint|0rint|orin|orinv|orinth)(?=/|how-to-|now-to-|[a-z])", "/wprm_print/", url)
+    url = re.sub(r"(?i)(?:wprm|wprr|worm|worn|wor)[,._-]?(?:print|printh|orint|drint|0rint|orin|orinv|orinth)(?=/|how-to-|now-to-|[a-z])", "wprm_print/", url)
+    # Common footer OCR error: the slash after wprm_print becomes f or is lost.
+    url = re.sub(r"(?i)wprm_printf(?=[a-z0-9-])", "wprm_print/", url)
+    url = re.sub(r"(?i)wprm_print(?=how-to-|now-to-|recipe-|print-|[a-z]+-[a-z]+)", "wprm_print/", url)
+    url = re.sub(r"(?i)/now-to-", "/how-to-", url)
     url = url.replace("https:/l", "https://").replace("http:/l", "http://")
     if url.lower().startswith("https:/") and not url.lower().startswith("https://"):
         url = "https://" + url[7:].lstrip("/")
@@ -567,30 +582,335 @@ def _find_urls_in_text(text: str) -> list[str]:
                     urls.append(url)
     return urls
 
-def _decode_qr_urls(path: Path) -> list[str]:
-    if cv2 is None or np is None:
+def _dedupe_urls(urls: Iterable[str]) -> list[str]:
+    """Preserve order while removing duplicate URL candidates."""
+    return list(dict.fromkeys([u for u in urls if u]))
+
+
+def _urls_from_decoded_qr_values(decoded_values: Iterable[str]) -> list[str]:
+    urls: list[str] = []
+    for value in decoded_values:
+        value = str(value or "").strip()
+        if value:
+            urls.extend(_find_urls_in_text(value))
+    return _dedupe_urls(urls)
+
+
+def _order_qr_points(points: Any) -> Any:
+    """Return QR corner points ordered TL, TR, BR, BL for perspective warp."""
+    pts = np.asarray(points, dtype="float32").reshape(4, 2)
+    s = pts.sum(axis=1)
+    diff = np.diff(pts, axis=1).reshape(4)
+    ordered = np.zeros((4, 2), dtype="float32")
+    ordered[0] = pts[np.argmin(s)]      # top-left
+    ordered[2] = pts[np.argmax(s)]      # bottom-right
+    ordered[1] = pts[np.argmin(diff)]   # top-right
+    ordered[3] = pts[np.argmax(diff)]   # bottom-left
+    return ordered
+
+
+def _warp_qr_from_points(image: Any, points: Any, output_size: int = 900) -> Any | None:
+    """Crop/deskew a detected QR quadrilateral into a square image for another decode pass."""
+    if cv2 is None or np is None or points is None:
+        return None
+    try:
+        ordered = _order_qr_points(points)
+        destination = np.array(
+            [
+                [0, 0],
+                [output_size - 1, 0],
+                [output_size - 1, output_size - 1],
+                [0, output_size - 1],
+            ],
+            dtype="float32",
+        )
+        transform = cv2.getPerspectiveTransform(ordered, destination)
+        warped = cv2.warpPerspective(image, transform, (output_size, output_size))
+        return cv2.copyMakeBorder(warped, 64, 64, 64, 64, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+    except Exception as exc:
+        LOGGER.info("[URL SCAN] QR warp failed: %s", exc)
+        return None
+
+
+def _iter_detected_qr_points(points: Any) -> list[Any]:
+    """Normalize OpenCV QR point return shapes into a list of 4-corner arrays."""
+    if points is None:
         return []
     try:
-        arr = cv2.imread(str(path))
-        if arr is None:
+        arr = np.asarray(points, dtype="float32")
+        if arr.size < 8:
             return []
-        detector = cv2.QRCodeDetector()
-        urls: list[str] = []
-        try:
-            ok, decoded_info, points, _ = detector.detectAndDecodeMulti(arr)
-        except Exception:
-            ok = False
-            decoded_info = []
-        if ok:
-            for value in decoded_info or []:
-                urls.extend(_find_urls_in_text(str(value)))
-        if not urls:
-            value, _, _ = detector.detectAndDecode(arr)
-            urls.extend(_find_urls_in_text(str(value)))
-        return urls
+        arr = arr.reshape(-1, 4, 2)
+        return [arr[i] for i in range(arr.shape[0])]
     except Exception:
         return []
 
+
+def _opencv_qr_variants(arr: Any) -> list[tuple[str, Any]]:
+    """Small OpenCV fallback set. pyzbar handles the fast first pass."""
+    variants: list[tuple[str, Any]] = [("original", arr)]
+    try:
+        # A quiet-zone border is cheap and helps some screenshots/printed codes.
+        variants.append(("white_border", cv2.copyMakeBorder(arr, 64, 64, 64, 64, cv2.BORDER_CONSTANT, value=[255, 255, 255])))
+        # Keep OpenCV bounded. In real testing, expensive OpenCV passes were slower
+        # than pyzbar and usually only helped by locating points for a later warp.
+        if max(arr.shape[:2]) < 1200:
+            variants.append(("upscaled_2x", cv2.resize(arr, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)))
+    except Exception as exc:
+        LOGGER.info("[URL SCAN] OpenCV QR variant prep failed: %s", exc)
+    return variants
+
+
+def _decode_qr_array_with_opencv(candidate: Any, label: str, detector: Any) -> tuple[list[str], list[str], bool, list[Any]]:
+    """Return (urls, decoded_values, saw_points, point_sets) for one OpenCV candidate image."""
+    urls: list[str] = []
+    decoded_values: list[str] = []
+    point_sets: list[Any] = []
+    saw_points = False
+
+    try:
+        ok, decoded_info, points, _ = detector.detectAndDecodeMulti(candidate)
+        point_sets.extend(_iter_detected_qr_points(points))
+        saw_points = saw_points or bool(point_sets)
+        LOGGER.info(
+            "[URL SCAN] OpenCV QR multi variant=%s ok=%s decoded_count=%s points=%s",
+            label,
+            ok,
+            len(decoded_info or []),
+            points is not None,
+        )
+        if ok:
+            for value in decoded_info or []:
+                value = str(value or "").strip()
+                if value:
+                    decoded_values.append(value)
+    except Exception as exc:
+        LOGGER.info("[URL SCAN] OpenCV QR multi variant=%s failed: %s", label, exc)
+
+    if not decoded_values:
+        try:
+            value, points, _ = detector.detectAndDecode(candidate)
+            extra_points = _iter_detected_qr_points(points)
+            point_sets.extend(extra_points)
+            saw_points = saw_points or bool(extra_points)
+            LOGGER.info(
+                "[URL SCAN] OpenCV QR single variant=%s decoded=%s points=%s",
+                label,
+                bool(value),
+                points is not None,
+            )
+            value = str(value or "").strip()
+            if value:
+                decoded_values.append(value)
+        except Exception as exc:
+            LOGGER.info("[URL SCAN] OpenCV QR single variant=%s failed: %s", label, exc)
+
+    urls = _urls_from_decoded_qr_values(decoded_values)
+    return urls, decoded_values, saw_points, point_sets
+
+
+def _decode_qr_urls_with_opencv(path: Path) -> tuple[list[str], bool, list[Any]]:
+    """Try bounded OpenCV QR decoding.
+
+    Returns URL candidates, whether strong QR evidence was seen, and warped crops.
+    Points found only after aggressive upscaling are treated as weak evidence;
+    real footer URL photos can produce false QR-like points there, which used to
+    trigger slow rescue work before OCR.
+    """
+    if cv2 is None or np is None:
+        LOGGER.info("[URL SCAN] OpenCV QR detection skipped because cv2/numpy is not available")
+        return [], False, []
+
+    arr = cv2.imread(str(path))
+    if arr is None:
+        LOGGER.info("[URL SCAN] OpenCV QR detection could not read image: %s", path)
+        return [], False, []
+
+    detector = cv2.QRCodeDetector()
+    urls: list[str] = []
+    decoded_values: list[str] = []
+    saw_any_points = False
+    saw_strong_points = False
+    warped_candidates: list[Any] = []
+
+    for label, candidate in _opencv_qr_variants(arr):
+        candidate_urls, candidate_values, candidate_saw_points, point_sets = _decode_qr_array_with_opencv(candidate, label, detector)
+        urls.extend(candidate_urls)
+        decoded_values.extend(candidate_values)
+        saw_any_points = saw_any_points or candidate_saw_points
+
+        # Treat points on original / white-border as strong QR evidence. Points
+        # that appear only after upscaling are useful for logging, but too noisy
+        # to justify the full QR rescue path on footer URL photos.
+        label_is_strong = label in {"original", "white_border"}
+        if candidate_saw_points and label_is_strong:
+            saw_strong_points = True
+
+        if point_sets:
+            LOGGER.info(
+                "[URL SCAN] OpenCV QR variant=%s point_sets=%s strong=%s",
+                label,
+                len(point_sets),
+                label_is_strong,
+            )
+
+        # Only build warped QR crops from strong QR evidence. This avoids wasting
+        # time warping text/table artifacts that OpenCV sees only after upscaling.
+        if label_is_strong:
+            for point_set in point_sets[:2]:
+                warped = _warp_qr_from_points(candidate, point_set)
+                if warped is not None:
+                    warped_candidates.append(warped)
+
+        if urls:
+            break
+
+    if saw_any_points and not saw_strong_points:
+        LOGGER.info("[URL SCAN] OpenCV saw only weak/upscaled QR-like points; treating as non-QR for OCR fallback")
+
+    # If OpenCV can locate a QR strongly but not decode it, deskew/crop the
+    # quadrilateral and try OpenCV again.
+    if not urls and warped_candidates:
+        for index, warped in enumerate(warped_candidates[:2], start=1):
+            label = f"warped_{index}"
+            candidate_urls, candidate_values, _, _ = _decode_qr_array_with_opencv(warped, label, detector)
+            urls.extend(candidate_urls)
+            decoded_values.extend(candidate_values)
+            if urls:
+                break
+
+    unique_urls = _dedupe_urls(urls)
+    LOGGER.info(
+        "[URL SCAN] OpenCV QR decoded_values=%s url_candidates=%s strong_points=%s",
+        decoded_values,
+        unique_urls,
+        saw_strong_points,
+    )
+    return unique_urls, saw_strong_points, warped_candidates
+
+
+def _cv2_array_to_pil_rgb(arr: Any) -> Image.Image:
+    if cv2 is not None and np is not None:
+        return Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB))
+    return Image.fromarray(arr)
+
+
+def _pyzbar_image_variants(
+    path: Path,
+    warped_candidates: list[Any] | None = None,
+    fast_only: bool = False,
+) -> list[tuple[str, Image.Image]]:
+    variants: list[tuple[str, Image.Image]] = []
+    with Image.open(path) as img:
+        base = ImageOps.exif_transpose(img).convert("RGB")
+
+    variants.append(("original", base))
+
+    # pyzbar has proven best for branded QR codes in this workflow. Keep the
+    # first pass intentionally small so normal QR scans return quickly.
+    gray = ImageOps.autocontrast(ImageOps.grayscale(base))
+    variants.append(("gray_autocontrast", gray))
+
+    if cv2 is not None and np is not None:
+        try:
+            arr = np.array(gray)
+            # threshold_105 decoded the real Delish test QR. Try it early.
+            variants.append(("threshold_105", Image.fromarray(cv2.threshold(arr, 105, 255, cv2.THRESH_BINARY)[1])))
+            if not fast_only:
+                for threshold in (125, 145, 165, 185):
+                    variants.append((f"threshold_{threshold}", Image.fromarray(cv2.threshold(arr, threshold, 255, cv2.THRESH_BINARY)[1])))
+                otsu = cv2.threshold(arr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+                variants.append(("threshold_otsu", Image.fromarray(otsu)))
+        except Exception as exc:
+            LOGGER.info("[URL SCAN] pyzbar variant prep failed: %s", exc)
+
+    if not fast_only:
+        variants.append(("white_border", ImageOps.expand(base, border=64, fill="white")))
+        if max(base.size) < 1400:
+            variants.append(("upscaled_2x", base.resize((base.width * 2, base.height * 2), Image.LANCZOS)))
+
+        for index, warped in enumerate(warped_candidates or [], start=1):
+            try:
+                warped_img = _cv2_array_to_pil_rgb(warped).convert("RGB")
+                variants.append((f"opencv_warped_{index}", warped_img))
+                warped_gray = ImageOps.autocontrast(ImageOps.grayscale(warped_img))
+                variants.append((f"opencv_warped_{index}_gray", warped_gray))
+            except Exception as exc:
+                LOGGER.info("[URL SCAN] Could not prepare pyzbar warped variant %s: %s", index, exc)
+
+    return variants
+
+
+def _decode_qr_urls_with_pyzbar(
+    path: Path,
+    warped_candidates: list[Any] | None = None,
+    fast_only: bool = False,
+) -> list[str]:
+    """Try pyzbar/libzbar QR decoding if available. Returns URL candidates only."""
+    if pyzbar_decode is None:
+        LOGGER.info("[URL SCAN] pyzbar QR detection skipped because pyzbar/libzbar is not available")
+        return []
+
+    urls: list[str] = []
+    decoded_values: list[str] = []
+    mode = "fast" if fast_only else "full"
+    try:
+        variants = _pyzbar_image_variants(path, warped_candidates=warped_candidates, fast_only=fast_only)
+        for label, image in variants:
+            decoded = pyzbar_decode(image)
+            LOGGER.info("[URL SCAN] pyzbar QR %s variant=%s decoded_count=%s", mode, label, len(decoded or []))
+            for item in decoded or []:
+                raw = getattr(item, "data", b"") or b""
+                try:
+                    value = raw.decode("utf-8", errors="replace").strip()
+                except Exception:
+                    value = str(raw or "").strip()
+                if value:
+                    decoded_values.append(value)
+                    urls.extend(_find_urls_in_text(value))
+            if urls:
+                break
+        unique_urls = _dedupe_urls(urls)
+        LOGGER.info("[URL SCAN] pyzbar QR %s decoded_values=%s url_candidates=%s", mode, decoded_values, unique_urls)
+        return unique_urls
+    except Exception as exc:
+        LOGGER.info("[URL SCAN] pyzbar QR %s detection failed: %s", mode, exc)
+        return []
+
+
+def _decode_qr_urls(path: Path) -> tuple[list[str], bool]:
+    LOGGER.info("[URL SCAN] QR detection starting for %s", path)
+
+    # Fast path first: real-world tests showed pyzbar decoded branded QR codes
+    # much faster than the full OpenCV/warp search. This does not affect printed
+    # footer URL photos because failures still fall through to OCR below.
+    urls = _decode_qr_urls_with_pyzbar(path, fast_only=True)
+    if urls:
+        LOGGER.info("[URL SCAN] QR URL found by pyzbar fast path: %s", urls[0])
+        return urls, False
+
+    # OpenCV fallback can still locate QR points and create warped crops for a
+    # deeper pyzbar retry, but the variant set is intentionally bounded.
+    urls, saw_qr_points, warped_candidates = _decode_qr_urls_with_opencv(path)
+    if urls:
+        LOGGER.info("[URL SCAN] QR URL found by OpenCV: %s", urls[0])
+        return urls, saw_qr_points
+
+    # If OpenCV did not even see QR finder points, this is almost certainly a
+    # printed footer URL photo rather than a QR photo. Skip the heavier pyzbar
+    # rescue variants and go straight to the OCR footer path. This preserves the
+    # working URL-image behavior while shaving several seconds off non-QR scans.
+    if not saw_qr_points:
+        LOGGER.info("[URL SCAN] No QR points detected after fast checks; skipping full QR rescue and falling back to OCR")
+        return [], False
+
+    urls = _decode_qr_urls_with_pyzbar(path, warped_candidates=warped_candidates, fast_only=False)
+    if urls:
+        LOGGER.info("[URL SCAN] QR URL found by pyzbar full path: %s", urls[0])
+        return urls, saw_qr_points
+
+    LOGGER.info("[URL SCAN] QR-like points were detected but no decoder returned a URL; using quick OCR fallback only")
+    return [], saw_qr_points
 
 
 def _find_likely_url_line_crops(img: Image.Image) -> list[Image.Image]:
@@ -681,7 +1001,10 @@ def _url_ocr_candidate_images(img: Image.Image) -> list[Image.Image]:
 
     w, h = img.size
 
-    candidates: list[Image.Image] = []
+    # Try detected URL-line crops first. They are usually much smaller than the
+    # fixed footer bands and were the fastest successful path in real footer
+    # photo testing.
+    candidates: list[Image.Image] = _find_likely_url_line_crops(img)
 
     boxes = [
         # tight footer URL bands; these are tuned for printed recipe footer URLs.
@@ -716,10 +1039,6 @@ def _url_ocr_candidate_images(img: Image.Image) -> list[Image.Image]:
         seen.add(norm)
         candidates.append(img.crop(norm))
 
-    # Add detected line crops after the fixed footer bands.  The fixed bands are
-    # more stable for slightly angled printed footer URLs; line crops are a
-    # useful fallback when the footer is positioned differently.
-    candidates.extend(_find_likely_url_line_crops(img))
     return candidates
 
 
@@ -741,8 +1060,8 @@ def _url_ocr_variants(candidate: Image.Image, crop_index: int) -> list[Image.Ima
     # Slight rotations are a big win for phone photos of printed footer URLs.
     # The common case is a small clockwise tilt, so try negative corrections first.
     rgb_candidates: list[Image.Image] = []
-    if crop_index <= 8:
-        for angle in (-3.0, -2.0, -4.0, -1.0):
+    if crop_index <= 2:
+        for angle in (-2.0, -3.0):
             try:
                 rgb_candidates.append(candidate.rotate(angle, resample=Image.BICUBIC, expand=True, fillcolor=(255, 255, 255)))
             except Exception:
@@ -769,19 +1088,21 @@ def _url_ocr_variants(candidate: Image.Image, crop_index: int) -> list[Image.Ima
                 blurred = cv2.GaussianBlur(arr, (3, 3), 0)
                 variants.append(Image.fromarray(blurred))
 
-                # Fixed thresholds work better than Otsu on many low-contrast footer URLs.
-                for threshold in (145, 165, 185, 205):
+                # Keep URL OCR bounded on the Pi. A couple fixed thresholds catch
+                # the useful footer cases without exploding into dozens of OCR calls.
+                for threshold in (165, 185):
                     variants.append(Image.fromarray(cv2.threshold(blurred, threshold, 255, cv2.THRESH_BINARY)[1]))
 
-                otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-                variants.append(Image.fromarray(otsu))
+                if crop_index <= 2:
+                    otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+                    variants.append(Image.fromarray(otsu))
             except Exception as exc:
                 LOGGER.debug("[URL SCAN] Could not build cv2 OCR variants: %s", exc)
 
     return variants
 
 
-def _ocr_url_from_image(img: Image.Image) -> tuple[list[str], str]:
+def _ocr_url_from_image(img: Image.Image, quick_mode: bool = False) -> tuple[list[str], str]:
     _require_tesseract()
 
     # PSM 7 is the key mode for printed footer URLs: one horizontal text line.
@@ -791,22 +1112,44 @@ def _ocr_url_from_image(img: Image.Image) -> tuple[list[str], str]:
 
     all_text: list[str] = []
     urls: list[str] = []
+    deadline = time.monotonic() + (8.0 if quick_mode else 18.0)
+    max_ocr_calls = 10 if quick_mode else 18
+    ocr_calls = 0
 
     candidates = _url_ocr_candidate_images(img)
-    LOGGER.info("[URL SCAN] OCR candidate crop count: %s", len(candidates))
+    if quick_mode:
+        # QR-like images with detected corner points but no decoded value can spend
+        # minutes in OCR on a Pi. Keep this fallback intentionally small while
+        # preserving the full footer-URL OCR path for non-QR photos.
+        candidates = candidates[:4]
+    LOGGER.info("[URL SCAN] OCR candidate crop count: %s quick_mode=%s", len(candidates), quick_mode)
 
     for idx, candidate in enumerate(candidates, start=1):
         variants = _url_ocr_variants(candidate, idx)
+        if quick_mode:
+            variants = variants[:3]
 
         for variant_index, variant in enumerate(variants, start=1):
-            # Try line mode first, then a sparse fallback.  Avoid expensive block OCR
-            # except for the final full-image fallback.
-            configs = [line_config, sparse_config]
-            if idx == len(candidates):
+            if time.monotonic() >= deadline or ocr_calls >= max_ocr_calls:
+                LOGGER.info("[URL SCAN] OCR bounded stop reached; returning best candidate so far if available")
+                if urls:
+                    urls = sorted(urls, key=_score_url_candidate, reverse=True)
+                    return urls, "\n".join(all_text).strip()
+                break
+
+            # Try line mode first. Sparse mode is slower, so only use it on the
+            # first two likely footer crops or quick QR fallback crops.
+            configs = [line_config]
+            if quick_mode or idx <= 2:
+                configs.append(sparse_config)
+            if not quick_mode and idx == len(candidates):
                 configs.append(block_config)
 
             for config in configs:
-                text = _ocr_image_once(variant, config=config, timeout_seconds=4).strip()
+                if time.monotonic() >= deadline or ocr_calls >= max_ocr_calls:
+                    break
+                ocr_calls += 1
+                text = _ocr_image_once(variant, config=config, timeout_seconds=2 if quick_mode else 3).strip()
                 if not text:
                     continue
 
@@ -820,7 +1163,10 @@ def _ocr_url_from_image(img: Image.Image) -> tuple[list[str], str]:
                         urls.append(url)
                 if urls:
                     best_so_far = max(urls, key=_score_url_candidate)
-                    if _score_url_candidate(best_so_far) >= 140 and "print" in best_so_far.lower():
+                    best_score = _score_url_candidate(best_so_far)
+                    # Once we have a plausible recipe/print URL, stop. Continuing
+                    # OCR just burns CPU and can replace a useful candidate with noise.
+                    if best_score >= 135 and ("print" in best_so_far.lower() or "wprm" in best_so_far.lower() or len(best_so_far) >= 55):
                         return [best_so_far] + [u for u in urls if u != best_so_far], "\n".join(all_text).strip()
 
     if urls:
@@ -837,14 +1183,15 @@ def extract_url_from_images(image_paths: Iterable[str]) -> dict[str, Any]:
         path = Path(str(image_path)).expanduser()
         if not path.exists():
             continue
-        for url in _decode_qr_urls(path):
+        qr_urls, saw_qr_points = _decode_qr_urls(path)
+        for url in qr_urls:
             if url not in all_urls:
                 all_urls.append(url)
         if all_urls:
             break
         try:
             with Image.open(path) as img:
-                urls, text = _ocr_url_from_image(img)
+                urls, text = _ocr_url_from_image(img, quick_mode=saw_qr_points)
         except CaptureRecipeError:
             raise
         except Exception:

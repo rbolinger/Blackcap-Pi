@@ -1529,21 +1529,23 @@ def mobile_extract_url_from_photo():
             temp_root = Path(temp_paths[0]).parent
         app.logger.info("[URL SCAN] Saved temp paths: %s", temp_paths)
 
+        app.logger.info("[URL SCAN] Starting QR-first URL extraction")
         result = extract_url_from_images(temp_paths)
         url = str(result.get("url") or "").strip()
         urls = result.get("urls", []) or []
-        app.logger.info("[URL SCAN] Extracted URL: %r; candidates=%s", url, urls)
+        ocr_text = str(result.get("ocr_text") or "").strip()
+        app.logger.info("[URL SCAN] Extraction complete; url=%r candidates=%s ocr_text_len=%s", url, urls, len(ocr_text))
 
         if not url:
-            return jsonify({"ok": False, "error": "No URL detected. Try retaking the photo closer to the QR code or footer URL."}), 200
+            return jsonify({"ok": False, "error": "No URL found. Try retaking the photo closer to the QR code or footer URL."}), 200
 
         return jsonify({"ok": True, "url": url, "urls": urls})
     except ClientDisconnected:
         app.logger.warning("[URL SCAN] Client disconnected before upload completed")
-        return jsonify({"ok": False, "error": "The photo upload was interrupted. Try again with a closer/cropped photo."}), 400
+        return jsonify({"ok": False, "error": "The photo upload was interrupted. Try again with a smaller or closer photo."}), 400
     except RequestEntityTooLarge:
         app.logger.warning("[URL SCAN] Upload too large")
-        return jsonify({"ok": False, "error": "The photo is too large. Try a closer/cropped photo or lower camera resolution."}), 413
+        return jsonify({"ok": False, "error": "The photo is too large. Try a smaller photo or lower camera resolution."}), 413
     except (CaptureRecipeError, ValueError) as exc:
         app.logger.info("[URL SCAN] Could not extract URL: %s", exc)
         return jsonify({"ok": False, "error": str(exc)}), 200

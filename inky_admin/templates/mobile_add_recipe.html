@@ -15,7 +15,7 @@
     .hero p { margin:4px 0 0; color:var(--muted); }
     .logo { width:68px; height:68px; object-fit:contain; flex:0 0 auto; }
     .card { background:rgba(255,250,242,.94); border:1px solid var(--line); border-radius:22px; box-shadow:var(--shadow); padding:16px; margin-bottom:14px; }
-    .tabs { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
+    .tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
     .tab { border:1px solid var(--line); background:#fff; color:var(--ink); }
     .tab.active { background:var(--blue); color:#fff; border-color:var(--blue); }
     label { display:block; font-weight:850; margin:12px 0 8px; }
@@ -31,6 +31,10 @@
     .mini-button { min-height:44px; padding:10px 12px; border-radius:14px; font-size:.95rem; margin-top:8px; background:#fff; color:var(--ink); border:1px solid var(--line); }
     .toast { display:none; border-radius:16px; padding:12px; margin-top:12px; font-weight:750; background:#e0f2fe; color:#075985; overflow-wrap:anywhere; }
     .toast.error { background:#fee2e2; color:var(--red); }
+    .progress-wrap { display:none; margin-top:12px; }
+    .progress-label { color:var(--muted); font-size:.9rem; font-weight:800; margin-bottom:7px; }
+    .progress-shell { width:100%; height:14px; border-radius:999px; overflow:hidden; border:1px solid var(--line); background:#fff; }
+    .progress-bar { width:0%; height:100%; background:var(--blue); transition:width .18s ease; }
     .actions { display:grid; grid-template-columns:1fr; gap:10px; margin-top:10px; }
     .success-actions { display:none; }
     @media (min-width:560px) { .actions { grid-template-columns:1fr 1fr; } .actions .wide { grid-column:1 / -1; } }
@@ -48,9 +52,8 @@
 
     <section class="card">
       <div class="tabs" role="tablist" aria-label="Add recipe method">
-        <button id="urlTab" class="tab active" type="button" onclick="setMethod('url')">🌐 Paste URL</button>
-        <button id="scanTab" class="tab" type="button" onclick="setMethod('scan')">▣ Scan URL</button>
-        <button id="captureTab" class="tab" type="button" onclick="setMethod('capture')">📷 Photos</button>
+        <button id="urlTab" class="tab active" type="button" onclick="setMethod('url')">🌐 Add from URL</button>
+        <button id="captureTab" class="tab" type="button" onclick="setMethod('capture')">📷 Add from Photos</button>
       </div>
 
       <form id="addRecipeForm" enctype="multipart/form-data">
@@ -59,14 +62,17 @@
         <div id="urlFields">
           <label for="url">Recipe URL</label>
           <input id="url" name="url" type="url" placeholder="https://example.com/my-recipe">
-          <p class="hint">URL recipes are saved as source Web and queued for background cache generation.</p>
-        </div>
+          <p class="hint">Paste a recipe URL, or scan a QR code / printed footer URL below. Both use the same web recipe add and cache flow.</p>
 
-        <div id="scanFields" style="display:none">
           <label for="urlPhotos">Scan QR code or URL footer photo</label>
           <input id="urlPhotos" name="url_photos" type="file" accept="image/*" capture="environment" multiple>
-          <button id="extractUrlButton" class="mini-button" type="button">🔎 Extract URL from Photo</button>
-          <p class="hint">Use this when the printed recipe has a QR code or a small URL in the footer. After the URL is found, the recipe is added exactly like a pasted web URL.</p>
+          <button id="extractUrlButton" class="mini-button" type="button">🔎 Scan Photo for URL</button>
+          <p class="hint">Photos are resized and compressed on your phone before upload. The full image is preserved; nothing is cropped.</p>
+
+          <div id="uploadProgress" class="progress-wrap" aria-live="polite">
+            <div id="progressLabel" class="progress-label">Preparing upload...</div>
+            <div class="progress-shell"><div id="progressBar" class="progress-bar"></div></div>
+          </div>
         </div>
 
         <div id="captureFields" style="display:none">
@@ -96,7 +102,7 @@
           <option value="single_page">Single Page</option>
         </select>
 
-        <button id="submitButton" class="primary" type="submit">🫐 Save Recipe</button>
+        <button id="submitButton" class="primary" type="submit">🫐 Save Web Recipe</button>
       </form>
 
       <div id="toast" class="toast"></div>
@@ -113,7 +119,6 @@
     const addMethod = document.getElementById('addMethod');
     const urlFields = document.getElementById('urlFields');
     const captureFields = document.getElementById('captureFields');
-    const scanFields = document.getElementById('scanFields');
     const urlPhotosInput = document.getElementById('urlPhotos');
     const extractUrlButton = document.getElementById('extractUrlButton');
     const urlInput = document.getElementById('url');
@@ -122,19 +127,22 @@
     const toast = document.getElementById('toast');
     const successActions = document.getElementById('successActions');
     const renderNewButton = document.getElementById('renderNewButton');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const progressLabel = document.getElementById('progressLabel');
+    const progressBar = document.getElementById('progressBar');
     let newRecipeId = '';
     let cachePollTimer = null;
     let selectedPhotoFiles = [];
+    let wakeLock = null;
+    let wakeLockWanted = false;
+    let wakeKeepAliveTimer = null;
 
     function setMethod(method) {
       addMethod.value = method;
       const isCapture = method === 'capture';
-      const isScan = method === 'scan';
-      document.getElementById('urlTab').classList.toggle('active', method === 'url');
-      document.getElementById('scanTab').classList.toggle('active', isScan);
+      document.getElementById('urlTab').classList.toggle('active', !isCapture);
       document.getElementById('captureTab').classList.toggle('active', isCapture);
       urlFields.style.display = isCapture ? 'none' : '';
-      scanFields.style.display = isScan ? '' : 'none';
       captureFields.style.display = isCapture ? '' : 'none';
       urlInput.required = !isCapture;
       photosInput.required = false;
@@ -186,6 +194,91 @@
       toast.style.display = 'block';
     }
 
+    function setProgress(message, percent = null) {
+      uploadProgress.style.display = 'block';
+      progressLabel.textContent = message;
+      if (percent !== null) progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    }
+
+    function hideProgress() {
+      uploadProgress.style.display = 'none';
+      progressBar.style.width = '0%';
+      progressLabel.textContent = 'Preparing upload...';
+    }
+
+    function setBusy(isBusy) {
+      extractUrlButton.disabled = isBusy;
+      submitButton.disabled = isBusy;
+      urlPhotosInput.disabled = isBusy;
+      document.getElementById('urlTab').disabled = isBusy;
+      document.getElementById('captureTab').disabled = isBusy;
+    }
+
+    function startWakeKeepAliveFallback() {
+      // This does not replace the Screen Wake Lock API, but it keeps the page
+      // active and gives us a visible log trail on browsers that refuse wake
+      // locks over plain HTTP/LAN addresses. True screen wake locks require a
+      // supported browser and secure context such as HTTPS.
+      if (wakeKeepAliveTimer) return;
+      wakeKeepAliveTimer = window.setInterval(() => {
+        console.debug('[URL SCAN] Wake keep-alive fallback tick');
+      }, 15000);
+    }
+
+    function stopWakeKeepAliveFallback() {
+      if (!wakeKeepAliveTimer) return;
+      window.clearInterval(wakeKeepAliveTimer);
+      wakeKeepAliveTimer = null;
+    }
+
+    async function requestWakeLock() {
+      wakeLockWanted = true;
+      startWakeKeepAliveFallback();
+
+      if (!window.isSecureContext) {
+        console.info('[URL SCAN] Screen Wake Lock unavailable because this page is not a secure context. Use HTTPS for actual screen wake lock support.');
+        return false;
+      }
+      if (!('wakeLock' in navigator)) {
+        console.info('[URL SCAN] Screen Wake Lock API is not supported by this browser.');
+        return false;
+      }
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => {
+          wakeLock = null;
+          if (wakeLockWanted && document.visibilityState === 'visible') {
+            requestWakeLock();
+          }
+        });
+        console.info('[URL SCAN] Screen Wake Lock acquired.');
+        return true;
+      } catch (err) {
+        wakeLock = null;
+        console.info('[URL SCAN] Screen Wake Lock request failed:', err);
+        return false;
+      }
+    }
+
+    async function releaseWakeLock() {
+      wakeLockWanted = false;
+      stopWakeKeepAliveFallback();
+      if (!wakeLock) return;
+      try {
+        await wakeLock.release();
+      } catch (err) {
+        // Wake Lock support is best-effort only.
+      } finally {
+        wakeLock = null;
+      }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible' && wakeLockWanted && !wakeLock) {
+        await requestWakeLock();
+      }
+    });
+
     async function postJson(url, payload = {}) {
       const response = await fetch(url, {
         method: 'POST',
@@ -234,38 +327,84 @@
       }, 120000);
     }
 
-    function dataUrlToFile(dataUrl, filename) {
-      const parts = dataUrl.split(",");
-      const mimeMatch = parts[0].match(/:(.*?);/);
-      const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
-      const binary = atob(parts[1]);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      return new File([bytes], filename, { type: mime });
+    function canvasToBlob(canvas, type, quality) {
+      return new Promise((resolve) => {
+        if (canvas.toBlob) {
+          canvas.toBlob((blob) => resolve(blob), type, quality);
+          return;
+        }
+        const dataUrl = canvas.toDataURL(type, quality);
+        const parts = dataUrl.split(',');
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : type;
+        const binary = atob(parts[1]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        resolve(new Blob([bytes], { type: mime }));
+      });
     }
 
     async function compressImageForUpload(file) {
-      if (!file || !file.type || !file.type.startsWith("image/")) return file;
+      if (!file || !file.type || !file.type.startsWith('image/')) return file;
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onerror = () => resolve(file);
         reader.onload = () => {
           const img = new Image();
           img.onerror = () => resolve(file);
-          img.onload = () => {
+          img.onload = async () => {
             const maxSide = 1000;
             const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-            const canvas = document.createElement("canvas");
+            const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.round(img.width * scale));
             canvas.height = Math.max(1, Math.round(img.height * scale));
-            const ctx = canvas.getContext("2d");
+            const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.70);
-            resolve(dataUrlToFile(dataUrl, (file.name || "url_scan").replace(/\.[^.]+$/, "") + "_scan.jpg"));
+            const blob = await canvasToBlob(canvas, 'image/jpeg', 0.70);
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const baseName = (file.name || 'url_scan').replace(/\.[^.]+$/, '');
+            resolve(new File([blob], `${baseName}_compressed.jpg`, { type: 'image/jpeg' }));
           };
           img.src = reader.result;
         };
         reader.readAsDataURL(file);
+      });
+    }
+
+    function uploadWithProgress(formData) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '{{ url_for('mobile_extract_url_from_photo') }}');
+        xhr.responseType = 'json';
+
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) {
+            setProgress('Uploading image...', 35);
+            return;
+          }
+          const uploadPercent = Math.round((event.loaded / event.total) * 80);
+          setProgress('Uploading image...', uploadPercent);
+        };
+        xhr.upload.onload = () => {
+          setProgress('Scanning for URL...', 90);
+          showToast('Scanning for URL...');
+        };
+
+        xhr.onerror = () => reject(new Error('The upload was interrupted before Blackcap Pi could scan the image.'));
+        xhr.ontimeout = () => reject(new Error('The upload timed out before Blackcap Pi could scan the image.'));
+        xhr.onload = () => {
+          const data = xhr.response || {};
+          if (xhr.status < 200 || xhr.status >= 300 || !data.ok) {
+            reject(new Error(data.error || 'No URL found.'));
+            return;
+          }
+          resolve(data);
+        };
+
+        xhr.send(formData);
       });
     }
 
@@ -275,23 +414,34 @@
         showToast('Take or choose a QR code / URL footer photo first.', true);
         return;
       }
-      extractUrlButton.disabled = true;
-      showToast('Looking for a QR code or printed URL...');
+      setBusy(true);
+      successActions.style.display = 'none';
+      await requestWakeLock();
+      setProgress('Compressing image...', 5);
+      showToast('Compressing image...');
       try {
         const formData = new FormData();
-        for (const file of files) {
+        for (const [index, file] of files.entries()) {
+          setProgress(`Compressing image ${index + 1} of ${files.length}...`, 5 + Math.round((index / files.length) * 20));
           const compressed = await compressImageForUpload(file);
           formData.append('url_photos', compressed);
         }
-        const response = await fetch('{{ url_for('mobile_extract_url_from_photo') }}', { method: 'POST', body: formData });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) throw new Error(data.error || 'Could not extract URL.');
+        setProgress('Uploading image...', 30);
+        showToast('Uploading image...');
+        const data = await uploadWithProgress(formData);
+        setProgress('Scanning for URL...', 92);
+        showToast('Scanning for URL...');
         urlInput.value = data.url || '';
+        setProgress('URL found', 100);
         showToast(data.url ? `URL found: ${data.url}` : 'URL found.');
+        setMethod('url');
       } catch (err) {
-        showToast(err.message, true);
+        setProgress('No URL found', 100);
+        showToast(err.message || 'No URL found.', true);
       } finally {
-        extractUrlButton.disabled = false;
+        window.setTimeout(hideProgress, 1400);
+        await releaseWakeLock();
+        setBusy(false);
       }
     });
 
