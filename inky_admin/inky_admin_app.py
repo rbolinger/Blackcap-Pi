@@ -92,19 +92,19 @@ def load_config() -> configparser.ConfigParser:
 
     # Seed normal_mode paths from the legacy [paths] values if needed.
     config["normal_mode"].setdefault("python_path", config["paths"].get("python_path", "/home/pi/inky_env/bin/python3"))
-    config["normal_mode"].setdefault("script_path", config["paths"].get("script_path", "/home/pi/inky_menu.py"))
+    config["normal_mode"].setdefault("script_path", config["paths"].get("script_path", "/home/pi/Blackcap-Pi/inky_menu.py"))
 
     # Recipe mode defaults.
     config["recipe_mode"].setdefault("python_path", "/home/pi/inky_env/bin/python3")
-    config["recipe_mode"].setdefault("script_path", "/home/pi/render_recipe_mode.py")
+    config["recipe_mode"].setdefault("script_path", "/home/pi/Blackcap-Pi/render_recipe_mode.py")
     config["recipe_mode"].setdefault("selected_recipe_id", "")
 
     # Deep clean display script. This is intentionally separate from normal/recipe
     # mode so the Admin UI button can run the same reset script used by cron.
     config["deep_clean_display"].setdefault("python_path", config["normal_mode"].get("python_path", "/home/pi/inky_env/bin/python3"))
-    config["deep_clean_display"].setdefault("script_path", "/home/pi/inky_deep_clean.py")
-    config["recipe_repository"].setdefault("repo_path", "/home/pi/inky_recipe_repo.json")
-    config["recipe_repository"].setdefault("cache_dir", "/home/pi/recipe_cache")
+    config["deep_clean_display"].setdefault("script_path", "/home/pi/Blackcap-Pi/inky_deep_clean.py")
+    config["recipe_repository"].setdefault("repo_path", "/home/pi/Blackcap-Pi/inky_recipe_repo.json")
+    config["recipe_repository"].setdefault("cache_dir", "/home/pi/Blackcap-Pi/recipe_cache")
 
     # Optional token for Chrome extension / API integrations. Leave blank to allow LAN-only
     # unauthenticated access, or set [api] extension_token and send:
@@ -114,9 +114,9 @@ def load_config() -> configparser.ConfigParser:
     # Preview image paths. final_preview remains the normal menu image.
     # recipe_preview remains the recipe image. current_preview is the shared
     # admin preview of whatever is currently on the display.
-    config["paths"].setdefault("current_preview", "/home/pi/current_view.png")
-    config["paths"].setdefault("recipe_preview", "/home/pi/recipe_preview.png")
-    config["paths"].setdefault("current_recipe_image", "/home/pi/recipe_cache/current_recipe_image.png")
+    config["paths"].setdefault("current_preview", "/home/pi/Blackcap-Pi/current_view.png")
+    config["paths"].setdefault("recipe_preview", "/home/pi/Blackcap-Pi/recipe_preview.png")
+    config["paths"].setdefault("current_recipe_image", "/home/pi/Blackcap-Pi/recipe_cache/current_recipe_image.png")
 
     return config
 
@@ -146,7 +146,7 @@ def slugify_recipe_id(name: str) -> str:
 
 
 def recipe_repo_path(config: configparser.ConfigParser) -> Path:
-    raw = cfg(config, "recipe_repository", "repo_path").strip() or "/home/pi/inky_recipe_repo.json"
+    raw = cfg(config, "recipe_repository", "repo_path").strip() or "/home/pi/Blackcap-Pi/inky_recipe_repo.json"
     path = Path(os.path.expanduser(raw))
     if not path.is_absolute():
         path = (BASE_DIR / path).resolve()
@@ -154,7 +154,7 @@ def recipe_repo_path(config: configparser.ConfigParser) -> Path:
 
 
 def recipe_cache_dir(config: configparser.ConfigParser) -> Path:
-    raw = cfg(config, "recipe_repository", "cache_dir").strip() or "/home/pi/recipe_cache"
+    raw = cfg(config, "recipe_repository", "cache_dir").strip() or "/home/pi/Blackcap-Pi/recipe_cache"
     path = Path(os.path.expanduser(raw))
     if not path.is_absolute():
         path = (BASE_DIR / path).resolve()
@@ -403,7 +403,7 @@ def get_selected_recipe(config: configparser.ConfigParser) -> dict | None:
 
 
 def current_recipe_image_path(config: configparser.ConfigParser) -> Path:
-    raw = cfg(config, "paths", "current_recipe_image").strip() or "/home/pi/recipe_cache/current_recipe_image.png"
+    raw = cfg(config, "paths", "current_recipe_image").strip() or "/home/pi/Blackcap-Pi/recipe_cache/current_recipe_image.png"
     path = Path(os.path.expanduser(raw))
     if not path.is_absolute():
         path = (BASE_DIR / path).resolve()
@@ -1430,7 +1430,7 @@ def restore_last_menu_image_to_display(config: configparser.ConfigParser) -> tup
     if not preview_path or not preview_path.exists():
         return False, "Last menu image not found. Run a normal refresh first.", 404
 
-    current_preview_path = path_from_value(cfg(config, "paths", "current_preview")) or Path("/home/pi/current_view.png")
+    current_preview_path = path_from_value(cfg(config, "paths", "current_preview")) or Path("/home/pi/Blackcap-Pi/current_view.png")
 
     python_path = path_from_value(cfg(config, "normal_mode", "python_path")) or path_from_value(cfg(config, "paths", "python_path"))
     if not python_path:

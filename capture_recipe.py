@@ -358,7 +358,7 @@ def _require_tesseract() -> None:
     if not TESSERACT_AVAILABLE or pytesseract is None:
         raise CaptureRecipeError(
             "pytesseract is not installed in this Python environment. "
-            "Install it with: /home/pi/inky_admin/venv/bin/pip install pytesseract"
+            "Install it with: /home/pi/inky_env/bin/pip install pytesseract"
         )
 
 

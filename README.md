@@ -107,9 +107,8 @@ Blackcap-Pi/
 │   └── inky_admin_app.py
 ├── inky_menu.py                # 📅 Menu rendering logic
 ├── render_recipe_mode.py       # 🍽️ Recipe display renderer
-├── inky_deep_clean.py            # 🧼 Monthly deep clean
+├── inky_deep_clean.py          # 🧼 Monthly deep clean
 ├── inky_menu_config.ini        # ⚙️ Configuration
-├── inky_env/                   # 🐍 Python virtual environment
 └── README.md
 ```
 
@@ -125,6 +124,8 @@ cd Blackcap-Pi
 ---
 
 ### 2. 🐍 Create the Python Environment
+
+The virtual environment intentionally lives outside the project folder:
 
 /home/pi/inky_env
 
@@ -150,7 +151,7 @@ Set:
 
 ### 4. ▶️ Run Admin UI
 
-/home/pi/inky_env/bin/python3 inky_admin/inky_admin_app.py
+/home/pi/inky_env/bin/python3 /home/pi/Blackcap-Pi/inky_admin/inky_admin_app.py
 
 Open:
 
@@ -182,12 +183,12 @@ After=network.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi
-ExecStart=/home/pi/inky_env/bin/python3 /home/pi/inky_admin/inky_admin_app.py
+WorkingDirectory=/home/pi/Blackcap-Pi
+ExecStart=/home/pi/inky_env/bin/python3 /home/pi/Blackcap-Pi/inky_admin/inky_admin_app.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
-Environment=INKY_CONFIG_PATH=/home/pi/inky_menu_config.ini
+Environment=INKY_CONFIG_PATH=/home/pi/Blackcap-Pi/inky_menu_config.ini
 
 [Install]
 WantedBy=multi-user.target
@@ -337,15 +338,15 @@ salad,leaf
 
 ```cron
 # 1. Maintenance: Monthly Deep Clean (1st of the month at 5:50 AM)
-50 5 1 * * /home/pi/inky_env/bin/python3 /home/pi/inky_deep_clean.py
+50 5 1 * * /home/pi/inky_env/bin/python3 /home/pi/Blackcap-Pi/inky_deep_clean.py
 
 # 2. Smart Refresh: Every 10 minutes, but only between 6:30 AM and 10:30 PM
 # 6:30 AM to 6:50 AM
-30,40,50 6 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+30,40,50 6 * * * /home/pi/inky_env/bin/python3 /home/pi/Blackcap-Pi/inky_menu.py
 # 7:00 AM to 9:50 PM (The bulk of the day)
-*/10 7-21 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+*/10 7-21 * * * /home/pi/inky_env/bin/python3 /home/pi/Blackcap-Pi/inky_menu.py
 # 10:00 PM to 10:30 PM
-0,10,20,30 22 * * * /home/pi/inky_env/bin/python3 /home/pi/inky_menu.py
+0,10,20,30 22 * * * /home/pi/inky_env/bin/python3 /home/pi/Blackcap-Pi/inky_menu.py
 ```
 
 ---

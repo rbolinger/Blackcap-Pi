@@ -134,8 +134,8 @@ def load_config(require_recipe_mode: bool = True) -> tuple[configparser.ConfigPa
     # --recipe-id. Newly added recipes may not be selected yet. The renderer will
     # validate the active recipe ID inside render_selected_recipe().
 
-    runtime["repo_path"] = require_path(config, "recipe_repository", "repo_path", "/home/pi/inky_recipe_repo.json")
-    runtime["recipe_cache_dir"] = require_path(config, "recipe_repository", "cache_dir", "/home/pi/recipe_cache")
+    runtime["repo_path"] = require_path(config, "recipe_repository", "repo_path", "/home/pi/Blackcap-Pi/inky_recipe_repo.json")
+    runtime["recipe_cache_dir"] = require_path(config, "recipe_repository", "cache_dir", "/home/pi/Blackcap-Pi/recipe_cache")
     runtime["recipe_preview_path"] = require_path(config, "paths", "recipe_preview", str(Path.home() / "recipe_preview.png"))
     runtime["current_preview_path"] = require_path(config, "paths", "current_preview", str(runtime["recipe_preview_path"]))
     runtime["current_recipe_image_path"] = require_path(config, "paths", "current_recipe_image", str(runtime["recipe_cache_dir"] / "current_recipe_image.png"))

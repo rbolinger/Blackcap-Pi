@@ -115,7 +115,7 @@ def load_config():
     runtime["last_snippet"] = require_path(config, "paths", "last_snippet")
     runtime["temp_full"] = require_path(config, "paths", "temp_full")
     runtime["final_preview"] = require_path(config, "paths", "final_preview")
-    runtime["current_preview"] = require_path(config, "paths", "current_preview") if config.has_option("paths", "current_preview") else Path("/home/pi/current_view.png")
+    runtime["current_preview"] = require_path(config, "paths", "current_preview") if config.has_option("paths", "current_preview") else Path("/home/pi/Blackcap-Pi/current_view.png")
     runtime["ocr_preview"] = require_path(config, "paths", "ocr_preview")
     runtime["menu_crop_preview"] = require_path(config, "paths", "menu_crop_preview")
 

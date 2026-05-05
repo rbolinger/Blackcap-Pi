@@ -10,7 +10,7 @@ from PIL import Image, ImageEnhance
 from waveshare_epd import epd13in3k
 
 # --- CONFIG PATH ---
-CONFIG_PATH = os.environ.get("INKY_CONFIG_PATH", "/home/pi/inky_menu_config.ini")
+CONFIG_PATH = os.environ.get("INKY_CONFIG_PATH", "/home/pi/Blackcap-Pi/inky_menu_config.ini")
 
 # --- LOAD CONFIG ---
 config = configparser.ConfigParser()
@@ -24,7 +24,7 @@ DISPLAY_HEIGHT = 680
 LOCK_FILE = Path(config.get("general", "lockfile", fallback="/tmp/inky_menu_display.lock"))
 
 # --- PATHS ---
-PROJECT_ROOT = Path("/home/pi")
+PROJECT_ROOT = Path("/home/pi/Blackcap-Pi")
 
 CURRENT_VIEW = PROJECT_ROOT / "current_view.png"
 MENU_FALLBACK = PROJECT_ROOT / "final_render_preview.png"

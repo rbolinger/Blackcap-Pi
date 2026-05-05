@@ -9,16 +9,16 @@ display_height = 680
 
 [normal_mode]
 python_path = /home/pi/inky_env/bin/python3
-script_path = /home/pi/inky_menu.py
+script_path = /home/pi/Blackcap-Pi/inky_menu.py
 
 [recipe_mode]
 python_path = /home/pi/inky_env/bin/python3
-script_path = /home/pi/render_recipe_mode.py
+script_path = /home/pi/Blackcap-Pi/render_recipe_mode.py
 selected_recipe_id = chicken_shawarma_tacos
 
 [deep_clean_display]
 python_path = /home/pi/inky_env/bin/python3
-script_path = /home/pi/inky_deep_clean.py
+script_path = /home/pi/Blackcap-Pi/inky_deep_clean.py
 
 [menu]
 url = [Change Me - Google Sheet Menu URL]
@@ -42,19 +42,19 @@ crop_right = 960
 
 [paths]
 lockfile = /tmp/inky_menu_display.lock
-icon_cache_dir = /home/pi/noun_cache
-translations_csv = /home/pi/noun_cache/NounProjectWords.csv
-current_snippet = /home/pi/current_snippet.png
-last_snippet = /home/pi/last_snippet.png
-temp_full = /home/pi/temp_full.png
-final_preview = /home/pi/final_render_preview.png
-ocr_preview = /home/pi/ocr_preview.png
-menu_crop_preview = /home/pi/menu_crop_preview.png
+icon_cache_dir = /home/pi/Blackcap-Pi/noun_cache
+translations_csv = /home/pi/Blackcap-Pi/noun_cache/NounProjectWords.csv
+current_snippet = /home/pi/Blackcap-Pi/current_snippet.png
+last_snippet = /home/pi/Blackcap-Pi/last_snippet.png
+temp_full = /home/pi/Blackcap-Pi/temp_full.png
+final_preview = /home/pi/Blackcap-Pi/final_render_preview.png
+ocr_preview = /home/pi/Blackcap-Pi/ocr_preview.png
+menu_crop_preview = /home/pi/Blackcap-Pi/menu_crop_preview.png
 python_path = /home/pi/inky_env/bin/python3
-script_path = /home/pi/inky_menu.py
-current_preview = /home/pi/current_view.png
-recipe_preview = /home/pi/recipe_preview.png
-current_recipe_image = /home/pi/recipe_cache/current_recipe_image.png
+script_path = /home/pi/Blackcap-Pi/inky_menu.py
+current_preview = /home/pi/Blackcap-Pi/current_view.png
+recipe_preview = /home/pi/Blackcap-Pi/recipe_preview.png
+current_recipe_image = /home/pi/Blackcap-Pi/recipe_cache/current_recipe_image.png
 
 [footer]
 max_icons = 8
@@ -71,5 +71,6 @@ ocr_threshold = 185
 diff_threshold = 0.1
 
 [recipe_repository]
-repo_path = /home/pi/inky_recipe_repo.json
+repo_path = /home/pi/Blackcap-Pi/inky_recipe_repo.json
+cache_dir = /home/pi/Blackcap-Pi/recipe_cache
 
