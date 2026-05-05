@@ -6,7 +6,7 @@ A purpose-built Raspberry Pi + e-ink display system for beautifully simple, dist
 
 Blackcap Pi is designed to render **recipes** and **daily menus** in a clean, readable format—perfect for kitchens, family hubs, or anywhere you want useful information without screens screaming for attention.
 
-Once configured, Blackcap Pi runs fully automated—no daily interaction required unless you want it for displaying that recipe for the next delicious meal you are going to make.
+Once configured, Blackcap Pi runs fully automated — no daily interaction required unless you want to display a recipe for your next meal.
 
 ---
 
@@ -172,7 +172,7 @@ After=network.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi
-ExecStart=/home/pi/inky_env/bin/python /home/pi/inky_admin/inky_admin_app.py
+ExecStart=/home/pi/inky_env/bin/python3 /home/pi/inky_admin/inky_admin_app.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -214,6 +214,10 @@ systemctl status inky_admin.service
 
 ```bash
 journalctl -u inky_admin.service -f
+```
+
+```md
+Use this while scanning a URL image to see QR vs OCR detection behavior in real time.
 ```
 
 ---
@@ -522,6 +526,7 @@ To ensure reliable uploads from phones:
 * Images are **resized and compressed in the browser** before upload  
 * Prevents slow uploads and device sleep interruptions  
 * No cropping is performed — the full image is preserved  
+* Improves reliability on mobile devices where large uploads may fail or cause the screen to sleep  
 
 ---
 
@@ -536,7 +541,7 @@ When scanning an image for a URL, Blackcap Pi automatically attempts:
 The system intelligently:
 
 * Prioritizes fast QR detection when possible  
-* Skips unnecessary QR processing for non-QR images  
+* Detects when an image is not QR-based and skips QR processing for faster OCR fallback  
 * Uses optimized OCR for printed URLs  
 
 ---
@@ -549,6 +554,7 @@ QR detection requires both a system package and Python dependency:
 sudo apt-get install -y libzbar0
 /home/pi/inky_env/bin/pip install pyzbar
 ```
+> Note: `pyzbar` requires the system package `libzbar0`. Installing the Python package alone is not sufficient.
 
 ---
 
@@ -573,6 +579,14 @@ sudo apt-get install -y libzbar0
   * Only enabled after a recipe has been rendered
   * Restores the **previous menu image**
   * Returns the display to **Menu Mode**
+
+## ⚡ Typical Workflow
+
+1. Add recipes via Chrome extension or mobile
+2. Let Blackcap Pi cache them in the background
+3. Open mobile UI in the kitchen
+4. Select → Render → Cook
+5. Tap Back to Menu when done
 
 ---
 
