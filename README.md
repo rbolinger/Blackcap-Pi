@@ -548,6 +548,7 @@ QR detection requires both a system package and Python dependency:
 ```bash
 sudo apt-get install -y libzbar0
 /home/pi/inky_env/bin/pip install pyzbar
+```
 
 ---
 
