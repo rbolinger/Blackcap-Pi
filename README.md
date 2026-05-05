@@ -476,12 +476,78 @@ Access it at:
 
 ### ✨ Features
 
-* 📱 Touch-friendly interface for phones and tablets
-* 🔍 Search and filter recipes (including by type)
-* 🖼️ Preview the image of a recipe before rendering the recipe
-* 🍽️ One-tap **Render Recipe**
-* 🔄 **Back to Menu** (restores last menu image)
-* 🔗 Quick link back to full Admin UI
+* 📱 Touch-friendly interface for phones and tablets  
+* 🔍 Search and filter recipes (including by type)  
+* 🖼️ Preview the image of a recipe before rendering  
+* 🍽️ One-tap **Render Recipe**  
+* 🔄 **Back to Menu** (restores last menu image)  
+* ➕ Add recipes directly from your phone  
+* 🔗 Quick link back to full Admin UI  
+
+---
+
+### ➕ Add Recipe
+
+You can add recipes directly from your phone in two ways:
+
+#### 🔗 Add from URL
+
+A unified **Add Recipe from URL** workflow supports:
+
+* 🔗 Paste a recipe URL manually  
+* 📷 Take or upload a photo of a printed recipe (footer URL)  
+* 🔳 Scan a QR code from a recipe page  
+
+All of these methods feed into the same URL-based recipe capture and caching pipeline.
+
+---
+
+#### 📸 Add from Photos (Capture Mode)
+
+You can also create recipes from images:
+
+* 📷 Take or upload photos of a recipe (cookbook, printout, handwritten, etc.)  
+* 🧾 Multiple images can be combined into a single recipe  
+* 📄 Images are converted into a clean, readable recipe format  
+* 💾 Saved locally and optimized for e-ink display  
+
+> Note: Capture-based recipes are stored locally and do not support cache refresh.
+
+---
+
+### ⚡ Mobile Upload Optimization
+
+To ensure reliable uploads from phones:
+
+* Images are **resized and compressed in the browser** before upload  
+* Prevents slow uploads and device sleep interruptions  
+* No cropping is performed — the full image is preserved  
+
+---
+
+### 🔍 Smart URL Detection
+
+When scanning an image for a URL, Blackcap Pi automatically attempts:
+
+1. **QR detection (fast path via `pyzbar`)**
+2. **OpenCV QR fallback (for harder scans)**
+3. **OCR fallback** for printed footer URLs  
+
+The system intelligently:
+
+* Prioritizes fast QR detection when possible  
+* Skips unnecessary QR processing for non-QR images  
+* Uses optimized OCR for printed URLs  
+
+---
+
+### 🧰 Requirements for QR Scanning
+
+QR detection requires both a system package and Python dependency:
+
+```bash
+sudo apt-get install -y libzbar0
+/home/pi/inky_env/bin/pip install pyzbar
 
 ---
 
